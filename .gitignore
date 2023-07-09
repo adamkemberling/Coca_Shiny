@@ -2,6 +2,11 @@
 .Rhistory
 .Rapp.history
 
+# Testing Data
+Data/*
+fishvis_data/*
+
+
 # Session Data files
 .RData
 .RDataTmp
