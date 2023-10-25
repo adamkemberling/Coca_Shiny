@@ -16,10 +16,11 @@ library(RColorBrewer)
 library(patchwork)
 library(glue)
 library(rcartocolor)
+library(showtext)
 
 
 # Lets turn some fonts on to match the theme:
-library(showtext)
+
 font_add_google("Raleway", "raleway")
 showtext_auto()
 
@@ -75,11 +76,11 @@ theme_map <- function(guides = T, ...){
 
 
 # Divergent log10 transformation
-# Make a custom transformation that handles log10 transformation in positive and negative values
+# Handles log10 transformation in positive and negative values
 divergent_l10_trans <- scales::trans_new(
   name = "signed_log",
-  transform=function(x) sign(x)*log10(abs(x)),
-  inverse=function(x) sign(x)*10^abs(x))
+  transform = function(x) sign(x)*log10(abs(x)),
+  inverse = function(x) sign(x)*10^abs(x))
 
 
 
@@ -219,6 +220,7 @@ hex_grid %>%
 # Then we just load one copy of the grid to join before plot time
 
 
+# st_write(hex_grid, dsn = here::here("Data/spatial/hex_grid.geojson"))
 
 
 
@@ -421,6 +423,104 @@ base_ssp5 | diff_ssp5
 
 
 
+#####__________________####
+#####  Seasonal Maps  ####
+
+
+
+#####__________________####
+#####  Bivariate Maps  ####
+
+
+
+
+
+####  BiVariate Color Palettes  ####
+# Bivariate colour bar
+# Toool for making a palette
+#https://observablehq.com/@benjaminadk/bivariate-choropleth-color-generator
+# Good article:
+# https://www.joshuastevens.net/cartography/make-a-bivariate-choropleth-map/ 
+
+# Palette Option 1
+pal <- c(
+  "A2_A1" = "#e8e8e8",
+  "A2_B1" = "#e89abf",
+  "A2_C1" = "#e8006d",
+  "B2_A1" = "#8bd7e8",
+  "B2_B1" = "#8b9abf",
+  "B2_C1" = "#8b006d",
+  "C2_A1" = "#01bee8",
+  "C2_B1" = "#019abf",
+  "C2_C1" = "#01006d")
+
+# Palette 2
+pal<-c(
+  "A2_A1"="#e8e8e8",
+  "A2_B1"="#d3a7cb",
+  "A2_C1"="#be64ac",
+  "B2_A1"="#a6d9d9", 
+  "B2_B1"="#a6a7cb",
+  "B2_C1"="#a664ac",
+  "C2_A1"="#5ac8c8",
+  "C2_B1"="#5aa7c8", 
+  "C2_C1"="#5a64ac")
+
+# GMRI color palette using blue and yellow
+gmri_bipal <- c(
+  "A2_A1" = "#e8e8e8", # 3x1 # position on the legend row x col
+  "A2_B1" = "#74a2b6", # 2x1
+  "A2_C1" = "#005b84", # 1x1
+  "B2_A1" = "#e4d680", # 3x2
+  "B2_B1" = "#729664", # 2x2
+  "B2_C1" = "#005549", # 1x2
+  "C2_A1" = "#dfc000", # 3x3
+  "C2_B1" = "#708700", # 2x3
+  "C2_C1" = "#004c00"  # 1x3
+)
+
+gmri_bipal_2 <- c(
+  "#e8f7ff", 
+  "#a0d5fa", 
+  "#53b1f5", 
+  "#e8c694", 
+  "#a0c694",
+  "#53b194", 
+  "#e88a11", 
+  "#a08a11", 
+  "#538a11"
+)
+
+
+
+
+# Table for building the legend
+tib<-tibble(
+  x1 = rep(c("A","B","C"),3),
+  y2 = c(rep("A",3),
+         rep("B",3),
+         rep("C",3)),
+  value = glue::glue("{y2}2_{x1}1")
+)
+
+
+# What a legend could look like
+leg <- ggplot(data=tib,aes(x=y2,y=x1,fill=value))+
+  #geom_point(pch=21,size=60,color="grey90")+
+  geom_tile()+
+  # geom_text(aes(label=value),size=10)+
+  scale_fill_manual(values=gmri_bipal_2)+
+  guides(fill="none") +
+  labs(x = "\u2190                      Fall Biomass                     \u2192", 
+       y = "\u2190                      Summer Biomass                     \u2192") +
+  theme(
+    axis.line = element_line(color = "black"),
+    panel.grid = element_blank(), panel.background = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_text(face = "bold", size = 16))
+
+leg
 
 
 
@@ -429,84 +529,226 @@ base_ssp5 | diff_ssp5
 
 
 
+####  Prep Data Across Projections  ####
 
+# So here is the general setup
+# Grading 2 Biomass variables (Summer & Fall)
+# into 3 bins (1, 2, & 3) for low-medium-high
+# These are benchmarked against the biomass during the baseline period, at a point in space
+
+
+
+# Species Test
+
+
+# Single Species Projections
+species_1 <- seasonal_species_i %>% 
+  filter(season %in% c("Summer", "Fall")) 
+
+
+
+####  Bivariate Normalization  ####
+
+# This step is where the data from two baselines (Fall/Spring) 
+# Or SSP1 and SSP5 Projections
+# OR 2 of whatever you are comparing.
+
+# Then, need to be coded into 9 levels
+# Use pt_id to scale for each location
+
+# Get difference between projection and base and scale
+bivar_season <- species_1 %>% 
+  group_by(pt_id, species, season, scenario) %>% 
+  summarise(
+    decade_relative = case_when(
+      diff_2050_z < -1  ~ "decline",
+      diff_2050_z > 1   ~ "increase",
+      TRUE ~ "similar"),
+    .groups = "drop")
+
+
+
+# From here I think we can pivot the seasons (after dropping spring), 
+x_diffs <- bivar_season %>% 
+  pivot_wider(values_from = "decade_relative", names_from = "season") 
+
+# Lastly: Add the geometry back
+# Add the geometry back on before plotting
+x_diffs <- x_diffs %>% 
+  left_join(hex_grid) %>% 
+  st_as_sf()
+
+
+
+# Use {glue} to pair the changes in two or more variables to match the
+# palette color names
+clean <- x_diffs %>% 
+  mutate(
+    # Summer Change: y axis, high medium low
+    summer_lab = case_when(
+      Summer == "decline" ~ "lowY",
+      Summer == "similar" ~ "midY",
+      Summer == "increase" ~ "highY"),
+    # F Change: x axis, high medium low
+    fall_lab = case_when(
+      Summer == "decline" ~ "lowX",
+      Summer == "similar" ~ "midX",
+      Summer == "increase" ~ "highX"),
+    bivar_lab = glue::glue("{fall_lab}_{summer_lab}")
+  )
+
+# Make the stupid names more clear:
+# X and Y are the coordinates on the 3x3 legend, "low" is bottom row and left side 
+gmri_bipal_2 <- c(
+  "lowX_lowY" = "#e8f7ff", 
+  "lowX_midY" = "#a0d5fa", 
+  "lowX_highY" = "#53b1f5", 
+  "midX_lowY" = "#e8c694", 
+  "midX_midY" = "#a0c694",
+  "midX_highY" = "#53b194", 
+  "highX_lowY" = "#e88a11", 
+  "highX_midY" = "#a08a11", 
+  "highX_highY" = "#538a11"
+)
+
+
+####  Bivariate Legend  ####
+
+
+# Build the legend:
+# Need to fix this garbage label table
+vals <- c("low", "mid", "high")
+label_tib <- tibble(
+  "x" = vals, 
+  "y" = vals) %>% 
+  complete(x,y) %>% 
+  mutate(value = str_c(x, "X_", y, "Y"),
+         x = factor(x, levels = vals),
+         y = factor(y, levels = vals))
+
+
+# Legend Plot
+leg <- ggplot(data = label_tib,
+              aes(x=x, y=y, fill=value))+
+  geom_point(pch=21,size=7,color="grey90")+
+  #geom_tile()+
+  #geom_text(aes(label=value),size=10)+
+  scale_fill_manual(values=gmri_bipal_2)+
+  guides(fill="none") +
+  labs(
+    x = "\u2190 Fall Biomass \u2192", 
+    y = "\u2190 Summer Biomass \u2192") +
+  theme(
+    axis.line = element_line(color = "black"),
+    panel.grid = element_blank(), 
+    panel.background = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_text(face = "bold", size = 8),
+    plot.background = element_rect(color = "black"))
+
+
+
+
+
+
+#### SSP1 Bivariate  ####
+
+(bivar_map_ssp1 <-  clean %>% 
+   filter(str_detect(scenario, "CMIP6_SSP1")) %>% 
+   ggplot() +
+   geom_sf(aes(fill = bivar_lab), show.legend = F) +
+   geom_sf(data = land_sf, color = "white", fill = "gray40") +
+   geom_sf(data = hague_sf, linewidth = 1, color = "black") +
+   coord_sf(xlim = c(-182500, 1550000), ylim = c(3875000, 5370000) , expand = F, crs = 32619) +
+   theme_map() +
+   scale_fill_manual(values = gmri_bipal_2) +
+   labs(title = str_c("SSP1: ", species_choice, "\nBivariate Seasonal Effect Map for 2050")))
+
+# Put Map and Legend Together
+bivar_map_ssp1 + inset_element(leg, 
+                               left = 0.65, 
+                               bottom = 0.05,
+                               right = 0.95,
+                               top = 0.35)
+
+
+####  SSP5 Bivariate  ####
+(bivar_map_ssp5 <-  clean %>% 
+    filter(str_detect(scenario, "CMIP6_SSP5")) %>% 
+    ggplot() +
+    geom_sf(aes(fill = bivar_lab), show.legend = F) +
+    geom_sf(data = land_sf, color = "white", fill = "gray40") +
+    geom_sf(data = hague_sf, linewidth = 1, color = "black") +
+    coord_sf(xlim = c(-182500, 1550000), ylim = c(3875000, 5370000) , expand = F, crs = 32619) +
+    theme_map() +
+    scale_fill_manual(values = gmri_bipal_2) +
+    labs(title = str_c("SSP5: ", species_choice, "\nBivariate Seasonal Effect Map for 2050")))
+
+
+# Put Map and Legend Together
+bivar_map_ssp5 + inset_element(leg, 
+                               left = 0.65, 
+                               bottom = 0.05,
+                               right = 0.95,
+                               top = 0.35)
 
 
 #####  Sandbox Code  ####
 
 
 
-# ####  General Organization  ####
-# 
-# # Once a species is chosen we can split into parts:
-# # 1. baseline
-# # 2. projection for SSP1
-# # 3. projection for SSP5
-# 
-# # These will be displayed as "change from baseline"
-# 
-# # 1. Isolate species
-# spec_i <- filter(
-#   annual_avg,
-#   species == species_choice)
-# 
-# 
-# 
-# # # 2. Isolate baseline
-# # base_i <- filter(
-# #   spec_i,
-# #   ref_period == "2010-2019")
-# 
-# 
-# 
-# 
-# # 3. Get Diffs
-# # means
-# # This actually has most of it in one place, might be the way to go
-# spec_i %>% 
-#   filter(!str_detect(var, "sd")) %>% 
-#   select(-var) %>% 
-#   pivot_wider(
-#     names_from = "ref_period",
-#     values_from = "val"
-#   ) %>% 
-#   mutate(
-#     diff_mu_2050 = `2050`-`2010-2019`,
-#     diff_mu_2050 = `2100`-`2010-2019`
-#   )
-# 
-# 
-# # Can do some preamble to keep sd along
-# # Standardize the difference by the BASE sd
-# messy_wide <- spec_i %>% 
-#   mutate(var_type = case_when(
-#     str_detect(var, "mu") ~ str_c("mean_", ref_period),
-#     str_detect(var, "sd") ~ str_c("sd_", ref_period))) %>% 
-#   select(-all_of(c("ref_period", "var"))) %>% 
-#   pivot_wider(
-#     names_from = var_type,
-#     values_from = val
-#   ) %>% 
-#   # Get differences 
-#   mutate(
-#     diff_2050   = `mean_2050` - `mean_2010-2019`,
-#     diff_2050_z = diff_2050 / `sd_2010-2019`,
-#     diff_2100   = `mean_2100` - `mean_2010-2019`,
-#     diff_2100_z = diff_2100 / `sd_2010-2019`)
-# 
-# 
-# 
-# # Look at the carnage:
-# glimpse(messy_wide)
-# 
-# 
-# 
-# # NOTES:
-# # Two copies of the same information for baseline, can drop that here if we have it isolated
-# # JUST kidding, its different for each of them because baseline epriod is different
-# # Also don't need variance on projections if we are only mapping the differences\
-# 
-# wide_slim <- messy_wide %>% 
-#   select(pt_id, species, scenario, `mean_2010-2019`, diff_2050, diff_2050_z, diff_2100, diff_2100_z)
 
+
+
+####  Leaflet Maps - Data not hooked up  ####
+
+
+####  Interactive Base Map  ####
+
+# # Plotly plot for space
+# plotly_widget <- plot_ly(x = diamonds$cut, type = "histogram") %>%
+#   config(displayModeBar = FALSE) %>%
+#   layout(margin = list(t = 0, b = 0, l = 0, r = 0))
+
+
+# # Set up the basemap to lay data on:
+# leaflet_widget <- leaflet() %>%
+#     addProviderTiles(providers$Esri.WorldImagery ) %>% 
+#     # addProviderTiles(providers$Esri.WorldGrayCanvas ) %>% 
+#     # addProviderTiles(providers$OpenStreetMap ) %>% 
+#     setView(lng = -68.7, lat = 42.3, zoom = 5)  %>%
+#     addMiniMap()
+
+
+
+
+
+
+# Adding sf objects to it
+
+# Demo baseline:
+lob_demo <- read_sf(here::here("Data/demos/lobster_baseline.geojson"))
+baseline_prep(lob_demo)
+
+
+# Palette Functions
+fill_palette <- colorNumeric(
+  #palette = "viridis",
+  palette = "Spectral",
+  domain = c(0, max(lob_demo$Log_Biomass)), reverse = T)
+
+
+
+# Trying hover labels
+lobster_map <- leaflet_widget %>% 
+  addPolygons(
+    data = st_transform(lob_demo, st_crs(4326)), 
+    color = ~fill_palette(Log_Biomass), 
+    weight = 0.5, 
+    label = ~round(Log_Biomass,1)) %>% 
+  addLegend(position = "bottomleft",
+            title = "Log(Biomass)",
+            pal = fill_palette, 
+            values = c(0, max(lob_demo$Log_Biomass)))
 

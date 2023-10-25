@@ -2,6 +2,15 @@
 
 
 
+####  Raw Materials  ####
+
+# Read the cropped land coverage:
+land_sf <- read_sf(here::here("./Data/spatial/nw_atlantic_countries_crs32619.geojson"))
+
+# Load the Hague Lines
+hague_sf <- read_sf(here::here("Data/spatial", "hagueline_crs32619.geojson"))
+
+
 
 ####  Themes  ####
 
@@ -16,19 +25,19 @@ theme_map <- function(guides = T, ...){
   list(
     # Theme options, with ellipse to add more
     theme(
+      # Font across all text
+      text = element_text(family = "raleway"),
       
       # Titles
       plot.title = element_text(hjust = 0, face = "bold", size = 14),
-      plot.subtitle = element_text(size = 9),
-      legend.title = element_text(size = 9),
-      legend.text = element_text(size = 9),
+      plot.subtitle = element_text(size = 12),
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 10),
       
       # Grids and Axes
       panel.background = element_blank(), 
       panel.border = element_rect(color = "black", fill = "transparent"), 
       panel.grid.major = element_line(color = "gray80"),
-      #axis.text.x=element_blank(), 
-      #axis.text.y=element_blank(), 
       axis.title.x = element_blank(),
       axis.title.y = element_blank(),
       axis.ticks=element_blank(),
@@ -38,31 +47,8 @@ theme_map <- function(guides = T, ...){
                                        size = 0.25),
       
       # Use ellipses for tweaks on the fly:
-      ...)#,
-    
-    # # Guide design
-    # guides(
-    #   fill = guide_colorbar(
-    #     title.position = "top",
-    #     title.hjust = 0.5, 
-    #     barwidth = unit(2, "in"),
-    #     barheight = unit(0.6, "cm"), 
-    #     direction = "horizontal",
-    #     frame.colour = "black", 
-    #     ticks.colour = "black"),
-    #   color = guide_colorbar(
-    #     title.position = "top",
-    #     title.hjust = 0.5,
-    #     barwidth = unit(2, "in"),
-    #     barheight = unit(0.6, "cm"),
-    #     direction = "horizontal",
-    #     frame.colour = "black",
-    #     ticks.colour = "black"))
-  )
+      ...))
 }
-
-
-
 
 # Plot theme for timeseries
 theme_plot <- function(...){
@@ -109,84 +95,69 @@ theme_plot <- function(...){
 
 
 
+# Divergent log10 transformation
+# Handles log10 transformation in positive and negative values
+divergent_l10_trans <- scales::trans_new(
+  name = "signed_log",
+  transform = function(x) sign(x)*log10(abs(x)),
+  inverse = function(x) sign(x)*10^abs(x))
 
-fetch_appdata <- function(data_resource = NULL, testing = T){
+
+# Take the same data, and make a fishnet grid
+# Will preserve the other columns if they exist
+sf_meshify <- function(input_df, coords = c("Lon", "Lat"), length_km = 25, in_crs = 4326, trans_crs = 32619, square = T){
+  
+  # Make the dataframe an sf class using coordinates
+  in_sf <- st_as_sf(input_df, coords = coords, crs = in_crs, remove = F) %>% 
+    # Transform it to a crs that is projected in meters
+    st_transform(crs = trans_crs)
+  
+  # If we are getting gaps we can buffer here, or up the mesh size
   
   
-  # 1. Path to the inputs for the app
-  project_path <- ifelse(
-    test = testing,
-    # Copy of Fishviz Data:
-    here::here("fishvis_data/Data"),
-    # Path to box where Andrew is putting outputs
-    project_path <- NULL)
+  # Use that data to define a grid with dimensions of length_km*length_km
+  sf_grid <- st_make_grid(
+    x = in_sf,
+    cellsize = c(length_km*1000, length_km*1000), 
+    what = "polygons", 
+    square = square) %>% 
+    # Make the grid an sf class
+    st_as_sf() 
   
+  # Use the original data to trim it so its just cells that overlap the points
+  sf_out <- sf_grid %>% 
+    st_filter(in_sf, .predicate = st_contains) %>%
+    st_as_sf() 
   
-  # 2. Append with data resource to make folder for the specific resource
-  resource_folder <- str_c(project_path, data_resource, sep = "/")
-  
-  
-  
-  # 3. List the files and name them
-  resource_files <- list.files(
-    resource_folder, full.names = TRUE) %>% 
-    setNames(list.files(resource_folder, full.names = FALSE))
-  
-  
-  # Read them all
-  fextension <- switch(
-    EXPR = data_resource,
-    "baseline_data"   = ".geojson",
-    "ssp1"            = ".geojson",
-    "ssp2"            = ".csv",
-    "center_biomass"  = ".csv",
-    "projected_data"  = ".geojson"
-  )
-  
-  # Read spatial files
-  if(fextension == ".geojson"){
-    resource_files <- map(resource_files, read_sf)
-  }
-  
-  # Read spatial files
-  if(fextension == ".csv"){
-    resource_files <- map(resource_files, read_csv, col_types = cols())
-  }
-  
-  
-  # Return the files
-  return(resource_files)
+  # Join the clipped grid to the dataset
+  sf_out <- st_join(sf_out, in_sf, join = st_intersects)
+  # Return the results  
+  return(sf_out)
   
 }
 
 
+# Function for mapping the baseline conditions
+map_baseline <- function(species_choice, ssp_scenario){
+  
+  
+  
+  
+  
+}
 
 
-
-
-# Convert points in sf polygon for plotting so the corners line up
+# My bsquare
 bSquare <- function(x, a, coords = c("x", "y")) {
-  a <- sqrt(a)/2
-  x <- sf::st_as_sf(x, coords = coords, crs = 32619, remove = FALSE) %>% drop_na(Log_Biomass)
-  x <- mutate(x, geometry = sf::st_buffer(geometry, 
-                                          dist = a, 
-                                          nQuadSegs=1, 
-                                          endCapStyle = "SQUARE"))
+  a <- sqrt(a) / 2 # Get square root of area to get a length for buffer distance
+  x_temp <- sf::st_as_sf(x, coords = coords, crs = 4326, remove = FALSE)
+  x <- st_transform(x_temp, crs = 32619) #%>% drop_na(Value)
+  x <- x %>%
+    mutate(., geometry = sf::st_buffer(geometry,
+                                       dist = a,
+                                       nQuadSegs = 1,
+                                       endCapStyle = "SQUARE"
+    ))
   return(x)
 }
 
-
-# Baseline data prep:
-# Cleans up geojson to minimum needs for map
-# drops un-needed columns
-baseline_prep <- function(baseline_dat){
-  baseline_prepped <- baseline_dat %>% 
-    mutate(Season = factor(Season, levels = c("Spring", "Summer","Fall"))) %>% 
-    bSquare(25000*25000, coords = c("Lon", "Lat")) # 
-  
-  # Drop columns we don't need
-  baseline_prepped <- baseline_prepped%>% 
-    select(Lon, Lat, Season, Climate_Scenario, Species, Log_Biomass, geometry)
-  
-  return(baseline_prepped)
-}
