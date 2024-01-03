@@ -1,342 +1,62 @@
-####  Packages  ####
-library(shiny)
-library(bslib)
+# Libraries
 library(here)
-library(rnaturalearth)
-library(sf)
-library(tidyverse)
-library(waiter)
-library(bsicons)
-library(rcartocolor)
-library(showtext)
-library(scales)
 
+# Load Global Assets: Shared/Available across all sessions
+# Contains: Support Code and Modules
+source(here("Coca_SDM_app_dev/global.R"))
 
-#### Support Functions:  ####
-
-# OG support script, should probably replace with minimum necessary data
-#source(here::here("R/app_support.R"))
-
-# New support script
-source(here::here("Coca_SDM_app_dev/app_functions/coca_application_funs.R"))
-
-# # Add fonts for figures
-font_add_google("Raleway", "raleway")
-
-# Path to the directory containing the font file (replace with your actual path)
-font_dir <- paste0(system.file("stylesheets", package = "gmRi"), "/GMRI_fonts/Avenir/")
-font_add(
-  family = "Avenir",
-  file.path(font_dir, "LTe50342.ttf"),
-  bold = file.path(font_dir, "LTe50340.ttf"),
-  italic = file.path(font_dir, "LTe50343.ttf"),
-  bolditalic = file.path(font_dir, "LTe50347.ttf"))
-showtext_auto()
-
-
-####  App Theming  ####
-custom_theme <- bs_theme(
-  version          = 5,
-  base_font        = "Avenir", 
-  heading_font     = font_google("Raleway"), 
-  fg               = "#00736D",
-  bg               = "#FFFFFF",
-  primary          = "#00608A", 
-  secondary        = "#535353", 
-  success          = "#407331", 
-  info             = "#ABB400", 
-  warning          = "#EACA00", 
-  danger           = "#EA4F12", 
-  font_scale       = 1.15, 
-  `enable-shadows` = TRUE, 
-  spacer           = "1.25rem"
-  
-)
-
-
-
-
-
-# Fix Species names:
-name_fix <- tribble(
-  ~"species",              ~"comname",
-  "butterfish",            "butterfish",              
-  "cod",                   "Atlantic cod",              
-  "haddock",               "haddock",             
-  "hagfish",               "hagfish",                
-  "halibut",               "halibut",                
-  "herring",               "herring",               
-  "jonahcrab",             "Jonah crab",                
-  "littleskate",           "little skate",                
-  "lobster",               "American lobster",               
-  "longfinsquid",          "longfin squid",                
-  "monkfish",              "monkfish",                
-  "northernsandlance",     "northern sandlance",               
-  "oceanquahog",           "ocean quahog",                
-  "pollock",               "pollock",                
-  "reddeepseacrab",        "red deepsea crab",               
-  "redhake",               "red hake",                
-  "rockcrab",              "rock crab",               
-  "scallop",               "scallop",              
-  "scup",                  "scup",               
-  "shortfinsquid",         "shortfin squid",               
-  "silverhake",            "silver hake",              
-  "smoothskate",           "smooth skate",               
-  "spinydogfish",          "spiny dogfish",               
-  "summerflounder",        "summer flounder",              
-  "thornyskate",           "thorny skate",               
-  "whitehake",             "white hake",               
-  "windowpaneflounder",    "windowpane flounder",              
-  "winterflounder",        "winter flounder",               
-  "winterskate",           "winter skate",                
-  "witchflounder",         "witch flounder",              
-  "yellowtailflounder",    "yellowtail flounder"             
-)
-
-####_________________________####
-####  Data Preparations:  ####
-
-
-
-##### VAST Ouptput Data  ####
-
-
-
-####  Timeseries Datasets  ####
-
-# # Annual Averages and the Baseline Difference
-# annual_wide <- read_csv(
-#   file = here::here("Data/projections/annual_proj_wide.csv"),
-#   col_types = cols(
-#     pt_id = col_double(),
-#     species = col_character(),
-#     scenario = col_character(),
-#     `mean_2010-2019` = col_double(),
-#     diff_2050 = col_double(),
-#     diff_2050_z = col_double(),
-#     diff_2100 = col_double(),
-#     diff_2100_z = col_double()
-#   ))
-# 
-# # Seasonal Average and the Baseline Difference
-# season_wide <- read_csv(
-#   file = here::here("Data/projections/seasonal_proj_wide.csv"),
-#   col_types = cols(
-#     pt_id = col_double(),
-#     species = col_character(),
-#     scenario = col_character(),
-#     season = col_character(),
-#     `mean_2010-2019` = col_double(),
-#     diff_2050 = col_double(),
-#     diff_2050_z = col_double(),
-#     diff_2100 = col_double(),
-#     diff_2100_z = col_double()
-#   ))
-
-
-#### Temperature Milestones Map Data  ####
-
-
-# Load the decadal milestone summaries
-horizon_projections <- read_csv(
-  here::here("Data/projections/Cmilestones_all_species_test.csv"),
-  col_types = cols(
-    var = col_character(),
-    ref_period = col_character(),
-    temp_horizon = col_character(),
-    species = col_character(),
-    scenario = col_character(),
-    pt_id = col_double(),
-    val = col_double()))  %>% 
-  left_join(name_fix, by = join_by(species)) %>% 
-  filter(str_detect(var, "_mu"))
-
-# # Save seasonal version
-# horizons_out_szns <- read_csv(
-#   here::here("Data/projections/Cmilestones_all_seasons_test.csv"),
-#   col_types = cols(
-#     Season = col_character(),
-#     var = col_character(),
-#     ref_period = col_character(),
-#     temp_horizon = col_character(),
-#     species = col_character(),
-#     scenario = col_character(),
-#     pt_id = col_double(),
-#     val = col_double()
-#   ))
-
-
-# Hexagonal grid simple feature geometry
-hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
-
-
-# Projection data before reactive selection
-species_projection_list <- horizon_projections %>% 
-  split(.$comname)
-
-
-##### User Selections "_opts"  ####
-
-
-# Names of species
-species_opts <- sort(unique(horizon_projections$comname))
-species_opts <- setNames(species_opts, str_to_title(species_opts))
-
-#  SSP scenarios
-scenario_opts <- c(
-  "Sustainable Development" = "CMIP6_SSP1_26",
-  "Fossil-Fueled Development" = "CMIP6_SSP5_85")
-
-# Temperatures Above Modern Climate
-horizon_opts  <-  str_c(c(0, 0.5, 1, 1.5, 2, 2, 3, 4), "C")
-
-
-
-
-
-
-
-##### Species Graphic Assets  ####
-
-# This could be text and any images/artwork associated with a species
-# Not a huge deal, but would add to the baseline page
-
-
-# Also need species baseline characteristics:
-# average temp/depth preferences
-# average size/weight
-# This should all be in some simple small csv
 
 
 
 
 
 ####____________________####
-#### R Generated Content  ####
+#### Global Environment and Testing Space  ####
 
 # These match the two user selection controls on the App
-species_choice <- "Atlantic cod"
+species_choice <- "haddock"
 scenario_choice <- "CMIP6_SSP5_85"
-horizon_choice <-  "0.5C"
+horizon_choice <-  "4C"
 
 # Filter
-annual_species_i <- species_projection_list %>% 
-  pluck(species_choice) 
+test_species <- horizon_projections %>% filter(comname == species_choice) 
 
 # At this point we can join back in the lat/lon or the grid
-annual_i   <- left_join(annual_species_i, hex_grid, by = join_by(pt_id))
+test_species   <- left_join(test_species, hex_grid, by = join_by(pt_id))
 
 # seasonal versions
-#seasonal_i <- left_join(seasonal_species_i, hex_grid, by = join_by(pt_id))
-#seasonal_species_i <- horizon_szns %>% split(.$comname) %>% pluck(species_choice) #%>% filter(scenario == scenario_choice)
+#test_species_season <- horizon_szns %>% filter(comname == species_choice, season == season_coice) 
+#test_species_season <- left_join(test_species, hex_grid, by = join_by(pt_id))
 
 
 
-# Split the two scenarios
+# Get a baseline and a projection to use as test selections
 
 # SSP1
-ssp1_base <- annual_i %>% 
+test_base <- test_species %>% 
   filter(
-    scenario == "CMIP6_SSP1_26", 
-    temp_horizon == "0C",
-    str_detect(var, "_mu")) %>% 
+    scenario == scenario_choice, 
+    temp_horizon == "0C") %>% 
   st_as_sf()
-ssp1_i <- annual_i %>% 
+test_proj <- test_species %>% 
   filter(
-    scenario == "CMIP6_SSP1_26", 
-    temp_horizon == horizon_choice,
-    str_detect(var, "_mu")) %>% 
+    scenario == scenario_choice, 
+    temp_horizon == horizon_choice) %>% 
   st_as_sf()
 
-# SSP5
+
+# Get the difference of testers
+diff_test <- get_difference(base_dat = test_base, proj_dat = test_proj)
 
 
 
 
 
+####  Next UP  ####
 
-
-
-#####  Demo Content  ####
-
-
-
-
-
-#### 1. Baseline Biomass Density  ####
-
-# This should be made reactively
-ssp5_base <- annual_i %>% 
-  filter(
-    scenario != "CMIP6_SSP1_26", 
-    temp_horizon == "0C", 
-    str_detect(var, "_mu")) %>% 
-  st_as_sf()
-
-# Getting the max 10^x value for scales
-max_l10 <- 10^(round(log10(max(ssp5_base$val)))+1)
-
-# This is the map
-demo_base_map <- ssp_proj_map_static(
-  dist_df          = ssp5_base,
-  scenario         = scenario_choice,
-  horizon_choice   = "0C",
-  species_option   = species_choice,
-  max_l10          = max_l10)
-
-
-
-
-#### 2. Projected Biomass Density  ####
-
-# This should also be filtered reactively
-ssp5_i <- annual_i %>% 
-  filter(
-    scenario != "CMIP6_SSP1_26", 
-    temp_horizon == horizon_choice, 
-    str_detect(var, "_mu")) %>% 
-  st_as_sf()
-
-# And the map
-demo_proj_map <- ssp_proj_map_static(
-  dist_df = ssp5_i,
-  scenario = scenario_choice,
-  horizon_choice = horizon_choice,
-  species_option = species_choice,
-  max_l10 = max_l10
-  )
-
-
-
-#### 3. Projected Change in Biomass Density  ####
-
-
-# this is the map
-demo_diff_map <- map_difference(
-  species_choice = species_choice, 
-  ssp_base = ssp5_base, 
-  ssp_projection = ssp5_i, 
-  horizon = "0.5C", 
-  col_lims = c(-5, 5)
-  )
-
-
-
-#### 4. Environmental Preference Curves  ####
-
-# 
-
-
-
-#### 5. Projected Biomass Timeseries  ####
-
-# Thinking we do colors for SSP scenario
-# make the annual average bold, make the seasons faded
-# then add direct labels to the ends
-
-
-
-
+# Timeseries baby!
+# Load the annual data, make it smooth, overlay seasons in a thoughtful way
+# Show when the thresholds are crossed
 
 
 
@@ -377,195 +97,20 @@ demo_diff_map <- map_difference(
 link_ssp <- tags$a("SSP Pathways", href = "https://climatedata.ca/resource/understanding-shared-socio-economic-pathways-ssps/", target = "_blank")
 
 
-####  Modules ####
-##### IDs: species, scenario, horizon,  
-# Sidebar elements (e.g., filter controls)
-sideUI <- function(id) {
-  ns <- NS(id)
-  
-  tagList(
-    # 1. Select Species
-    selectInput(
-      inputId = ns("in_species"),
-      label = "Species Name", 
-      choices = unique(species_opts),
-      selected = "halibut"),
-    
-    # 2. Pick a climate source
-    selectInput(
-      inputId = ns("in_scenario"),
-      label = "Climate Scenario", 
-      choices = as.character(scenario_opts),
-      selected = "Fossil-Fueled Development"),
-    
-    # 3. Select the temperature horizon about baseline
-    selectInput(
-      inputId = ns("in_horizon"),
-      label = "Increase in Region-Wide Temperatures:", 
-      choices = horizon_opts, 
-      selected = "0.5C")
-      )
-}
+
+#### Modules Testing:  ####
+# test modules here before exporting them out to their own files
 
 
-# The UI end of this works:
-# Module for creating an output card of a species distribution
-projection_map_ui <- function(id){
-  
-  # Build the card to contain everything
-  card(
-    
-    # Card Header Contents
-    card_header(
-      class = "bg-dark", 
-      "Distribution Under Average Baseline Conditions"),
-    
-    # Card Body Content
-    card_body(
-      
-      # Headline text above the plot - can be swapped with textoutput to be reactive
-      markdown("Baseline Density Distribution"),
-      
-      # This is where the focal element goes:
-      card_body(
-        class = "p-distribution_map",
-        plotOutput(
-          NS(id, "proj_map"), 
-          height = "100%", 
-          width = "100%")
-        
-      ) # Close cardbody
-    ), # Close cardbody
-    
-    # Footer information should be a module if dynamic
-    card_footer(
-      class = "fs-6",
-      "Projected distributions not based on stock recovery status or any ecological interactions.")
-    
-  ) # Close the card
-  
-}
+# ####  Modules: Data Filtering  ####
 
-
-
-
-####  Breaking HERE  ####
-
-# The reactive filtering of the species is breaking ####
-# Seems like the inputs aren't being accessed correctly
-
-# # Testing the input  filters:
-# input <- list(
-#   "in_species" = "halibut", 
-#   "in_scenario" = "SSP5 8.5", 
-#   "in_horizon" = "0C")
-
-# Filter the species/decade/season and eventually SSP to display as maps/plots
-# This selects data for the baseline and for temporal trends
-
-
-
-####  Modules: Data Filtering  ####
-
-# Filter the data based on species and ssp
-filterSpecies_server <- function(id, species_projection_list){  
-
-    moduleServer(
-      id,
-      function(input, output, session){
-        
-        # Get dataset based on user inputs:
-        # subsets from dataList or baseline_dataList
-        df <- reactive({
-          
-          # Perform the filtering used to make the baseline map
-          df <- species_projection_list %>%
-            pluck(input$in_species) %>%
-            filter(scenario == input$in_scenario) %>%
-            left_join(hex_grid, by = join_by(pt_id))
-          
-          return(df)
-          
-        }) # End Reactive
-        
-    } # Close module function
-    
-  ) # Close moduleServer
-  
-} # End filtering
-
-
-
-####  We Could Further Split here for baseline, projection, and difference
-
-# Filter the species and scenario data for just the baseline data
-filterBaseline_server <- function(id, df) {
-  moduleServer(
-    id,
-    function(input, output, session) {
-      
-      # Take projection data and subset by user selections
-      df_r <- reactive({
-        df <- df() %>% dplyr::filter(temp_horizon == "0C")
-        return(df)
-      })
-    })
-}
-
-
-# Filter the species and scenario data for just the projection data
-filterProjection_server <- function(id, df) {
-  moduleServer(
-    id,
-    function(input, output, session) {
-      
-      # Take projection data and subset by user selections
-      df_r <- reactive({
-        df <- df() %>% dplyr::filter(temp_horizon == input$in_horizon)
-        return(df)
-      })
-    })
-}
+# Moved to their own files
 
 #### Modules: Plot generation  ####
 
+# Moved to their own files
 
-####  Problem Identified - namespace for inputs not working  ####
 
-# Server side: Baseline Map Generation
-projection_map_server <- function(id, in_data) {
-  
-  moduleServer(
-    id, 
-    function(input, output, session) {
-    
-    # # Get some reactive data:
-    # dat <- reactive(
-    #   horizon_projections %>% 
-    #     filter(
-    #       comname == "halibut",
-    #       temp_horizon == "0C",
-    #       scenario == "CMIP6_SSP5_85") %>% 
-    #       # comname == input$in_species,
-    #       # temp_horizon == input$in_horizon,
-    #       # scenario == input$in_scenario) %>% 
-    #     left_join(hex_grid, by = join_by("pt_id")))
-    
-    # Use the sidebar server details to load the reactive data
-    dat <- in_data
-    
-    # Add plot to output for access into UI
-    output$proj_map <- renderPlot({
-      
-      map_out <- ssp_proj_map(              # Function to produce the plot
-        dist_df = dat,         # simple features dataframe that is to be mapped
-        max_l10 = 10000)
-      print(map_out)
-      
-    })
-      
-  })
-}
 
 
 
@@ -621,11 +166,12 @@ ui <- page_navbar(
   
   # Tab 1: 
   nav_panel(
-    title = "Baseline Distribution", value = "baseline_tab",
+    title = "1. Baseline Period Distribution", 
+    value = "baseline_tab",
     
     #### 1. Baseline Conditions  ####
     
-    ##### a. Description & Map #### 
+    ##### a. Baseline Description #### 
     layout_column_wrap(
       width = 1/2, 
       height = 800,
@@ -634,163 +180,133 @@ ui <- page_navbar(
       card(
         card_header(
           class = "bg-dark",
-          "Species Name Baseline Characteristics"),
+          "Baseline Period Characteristics"),
+        
         card_body(
-          markdown("**What do we mean by baseline?**"),
+          markdown("**What is meant by baseline?**"),
           card_body(
             class = "p-static",
-            #plotly_widget
-            strong("To set a standard from which to compare against, we've used a ten-year period of 2010-2019 as our modern baseline."),
-            p("Scientists lean on observations from a baseline period of to learn species preferences 
-               for different environments. Using data from these periods scientists model how individual 
-                species respond to changes in the natural environment like depth, salinity, and temperature. 
-                These relationships allow scientists to make an educated guess on distribution 
-                changes under projected future conditions."),
+            strong("To set standards from which to compare against, we've used a ten-year period of 2010-2019 as our modern baseline."),
+          
+            p("Scientists lean on observations from baseline periods to learn a species preferences 
+               for different environments. Using data from these periods scientists model how a 
+               species responds to changes in the natural environment. Understanding these 
+               relationships allow scientists to make an educated guess on distribution 
+               changes under projected future conditions."),
             
-            p("The map to the right displays the average density that this species can be found. Habitat
-              use reflects the combined influence of the physical factors used in the model: surface and bottom temperature, 
-              surface and bottom salinity, and any tendency to cluster around important seafloor features.")
-            # This is where reactive outputs would go
-          )),
-        card_footer(
-          markdown("[Learn more about the ecology of this species](https://www.fisheries.noaa.gov/species/atlantic-cod)")
-        )
+            p("The map to the right displays the average baseline period biomass  
+               based on average environmental conditions. Physical factors in the model include: 
+               surface and bottom temperature, and any tendencies to cluster around 
+               important seafloor features."), 
+            
+            p("Over this baseline period, _____ have shown the following broad characteristics and preferences:"),
+            ####  Testing Dynamic Text####
+            verbatimTextOutput("species_text"),
+            
+            
+            
+            ##### b. Value Boxes  ####
+            # Second layout wrap height for the species metrics  
+            layout_column_wrap(
+              fill = FALSE, row_heights = 300,width = "300px",
+              
+              # Value Box 1: Temperature
+              value_box(
+                  title = "Preferred Temperature",
+                  value = str_c(45, deg_c),
+                  showcase = bsicons::bs_icon("thermometer-sun")
+                ),
+              
+              # Value Box 2: Depth
+              value_box(
+                  title = "Preferred Depth",
+                  value = str_c(120, " meters"),
+                  showcase = bsicons::bs_icon("align-bottom"),
+                  theme_color = "dark"
+                ),
+              
+              # Value Box 3: Bodymass
+              value_box(
+                  title = "Average body mass",
+                  value = str_c(740, "g"),
+                  showcase = bsicons::bs_icon("handbag"),
+                  theme_color = "secondary"),
+              
+              # Value Box 4: Average Length
+              value_box(
+                  title = "Average length",
+                  value = str_c(83, "cm"),
+                  showcase = bsicons::bs_icon("rulers"),
+                  theme_color = "secondary")
+              
+            ) # Close value box layout
+            
+            ) # close card body 
+          
+          
+          ),# Close Card 1
+        
+        card_footer(markdown("[Learn more about the ecology of this species](https://www.fisheries.noaa.gov/species/atlantic-cod)"))
       ),
       
-      #### Card UI  Testing  ####
-      # Card Module testing
+      #### c. Baseline Map  ####
+      # Use Module for map card
       projection_map_ui("baseline_bio_map")
       
 
     
-    ), # End layout_col for map and baseline description
+    ) # End layout_col for map and baseline description
     
     
     
-    ##### a. Value Boxes  ####
-    # Second layout wrap height for the species metrics  
-    layout_columns(
-      fill = FALSE, row_heights = 300,
-      
-      # Value Box 1: Temperature
-      card(
-        style ="border-color: #FFFFFF; border-radius: .150rem",
-        # Value Boxes for Characteristics
-        value_box(
-          title = "Preferred Temperature",
-          value = str_c(45, deg_c),
-          showcase = bsicons::bs_icon("thermometer-sun")
-        )),
-      
-      # Value Box 2: Depth
-      card(
-        style ="border-color: #FFFFFF; border-radius: .150rem",
-        value_box(
-          title = "Preferred Depth",
-          value = str_c(120, " meters"),
-          showcase = bsicons::bs_icon("align-bottom"),
-          theme_color = "dark"
-        )),
-      
-      # Value Box 3: Bodymass
-      card(
-        style ="border-color: #FFFFFF; border-radius: .150rem",
-        value_box(
-          title = "Average body mass",
-          value = str_c(740, "g"),
-          showcase = bsicons::bs_icon("handbag"),
-          theme_color = "secondary")),
-      
-      # Value Box 4: Average Length
-      card(
-        style ="border-color: #FFFFFF; border-radius: .150rem",
-        value_box(
-          title = "Average length",
-          value = str_c(83, "cm"),
-          showcase = bsicons::bs_icon("rulers"),
-          theme_color = "secondary"))
-      
-    ) # End Value Box layout_columns()
+    
     
     
   ), # End nav_panel 1
   
-    #### Tab 2: Projected Biomass at Temperature Horizon  ####
+    #### Tab 2: Projected Biomass  ####
     nav_panel(
-      title = "Projected Distribution at +0.5C", 
+      title = "2. Projected Future Distribution", 
       value = "projected_bio_tab",
       
-      ##### a. Description & Map #### 
+       
       layout_column_wrap(
         width = 1/2, 
         height = 800,
         
-        # Card 1: Written Description
-        card(
-          card_header(
-            class = "bg-dark",
-            "Species Characteristics"),
-          card_body(
-            markdown("How are Future Distributions Estimated?"),
-            card_body(
-              class = "p-static",
-              p("The display to the right displays the predicted biomass distribution 
-                at the point in our ensemble climate model when the shelf-wide temperatures 
-                approach +0.5C above current conditions (2010-2019). These projections are 
-                modeled using surface temperature, bottom temperature, depth, and spatial correlation
-                patterns. Each species is modeled independently to capture their specific habitat needs."),
-              p("The further that the regional climate moves from current conditions, the larger 
-                the change in distribution species must undergo to follow suitable conditions, and the
-                harder it becomes to predict without accounting for other key ecological needs.")
-              # This is where reactive outputs would go"
+        ##### Description ####
+        # Card 1: Projected Density Timeseries
+        projected_timeseries_ui("projected_bio_timeseries"), 
               
-              )),
-              card_footer(
-                markdown("[Shared Socio-Economic Pathways](https://climatedata.ca/resource/understanding-shared-socio-economic-pathways-ssps/)")
-              )
-                      ),
-              
-              # Card 2: Projected Species Distribution
-              projection_map_ui("projected_bio_map") 
+        ##### Map ####
+        # Card 2: Projected Species Distribution
+        projection_map_ui("projected_bio_map") 
 
       ) # End layout_col for map and baseline description
       
     ), # End Tab 2
     
     
-    #### Tab 3. Difference in Biomass at Temperature Horizon  ####
+  
+  
+  
+    #### Tab 3. Biomass Change  ####
     
     nav_panel(
-      title = "Changes in Distribution", "difference_map_tab",
-      ##### a. Description & Map #### 
+      title = "3. Changes to Habitat Suitability",
+      value = "difference_tab",
+      
+      ##### a. Description #### 
       layout_column_wrap(
         width = 1/2, 
         height = 800,
         
         # Card 1: Written Description
-        card(
-          card_header(
-            class = "bg-dark",
-            "Species Characteristics"),
-          card_body(
-            markdown("What does SSP5-8.5 Mean"),
-            card_body(
-              class = "p-static",
-              #plotly_widget
-              p("The display to the right displays how biomass is projected to change
-                under future conditions consistent with our ensemble climate data  
-                when the shelf-wide temperatures approach +0.5C above current conditions (2034-2038)."),
-              p("Something boilerplate here")
-              # This is where reactive outputs would go
-            )),
-        card_footer(
-          markdown("[Shared Socio-Economic Pathways](https://climatedata.ca/resource/understanding-shared-socio-economic-pathways-ssps/)")
-        )
-        ),
+        preference_card_ui("preference_curve_plot"),
         
         # Card 3: Projected Difference Map
         # Card Module testing
-        projection_map_ui("projected_diff_map")
+        difference_map_ui("projected_diff_map")
         
       ) # End layout column
   ), # End Panel 3
@@ -836,51 +352,54 @@ ui <- page_navbar(
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
   
+  
   #### Reactive Data  ####
   
   # 1. Filter the input data for the different pieces:
   # id matches the sidebar id where the inputs all are
-  species_dat <- filterSpecies_server("sidebar_ID", species_projection_list = species_projection_list)
-  baseline_dat <- filterBaseline_server("sidebar_ID", df = species_dat)
+  
+  # Spatial density projections: species
+  species_dat    <- filterSpecies_server("sidebar_ID", species_projection_list = species_projection_list)
+  # Projected densities: baseline
+  baseline_dat   <- filterBaseline_server("sidebar_ID", df = species_dat)
+  # Projected densities: projections
   projection_dat <- filterProjection_server("sidebar_ID", df = species_dat)
+  # Projected_densities: changes
+  difference_dat <- getDifference_server("sidebar_ID", base_df = baseline_dat, proj_df = projection_dat)
+  # Projected density timeseries
+  timeseries_dat <- getTimeseries_server("sidebar_ID", density_timeseries = density_timeseries)
+  # Species preference curve and environmental states
+  preferences_dat <- filterPreferences_server("sidebar_ID", pref_data = pref_data, env_condition_data = env_condition_data)
   
   
-  #### Map Modules  ####
+  ####  Reactive UI  ####
+  # Reactive temperature horizons
+  callModule(updateHorizons, 'sidebar_ID')
+  
+  
+  #### Card Modules  ####
 
   # # 2. Build the map/plot content for the UI
   # ID's should match the cards for their outputs
+  
+  # Card 1: Baseline projection
   projection_map_server(id = "baseline_bio_map", in_data = baseline_dat)
-  projection_map_server(id = "projected_bio_map", in_data = projection_dat)
-  projection_map_server(id = "projected_diff_map", in_data = projection_dat)
+  
+  # Card 2: 
+  # a. projected timeseries
+  projected_timeseries_server(id = "projected_bio_timeseries", in_data = timeseries_dat)
+  
+  # b. projected map
+  projection_map_server(id = "projected_bio_map", in_data = projection_dat, add_labels = TRUE)
+  
+  # Card 3:
+  # a. 
+  preference_curve_server("preference_curve_plot", in_data = preferences_dat) 
+  # b. difference map
+  difference_map_server(id = "projected_diff_map", in_data = difference_dat)
   
   
-  #### Static Demo Content  ####
   
-  # # # # Baseline Distribution Map
-  # # Projected Biomass Map
-  # output$baseline_bio_map <- renderPlot({
-  #   demo_base_map
-  # })
-
-  # output$baseline_bio_map <- renderPlot({
-  #      # demo_base_map
-  #      ssp_proj_map(
-  #        dist_df          = baseline_df,
-  #        scenario         = input$in_scenario,
-  #        horizon_choice   = "0C",
-  #        species_option   = input$in_species,
-  #        max_l10          = max_l10)
-  # 
-  # })
-  # # Projected Biomass Map
-  # output$projected_bio_map <- renderPlot({
-  #   demo_proj_map
-  # })
-  # 
-  # # Change in Biomass App
-  #  output$projected_diff_map <- renderPlot({
-  #   demo_diff_map
-  # })
   
 }
 

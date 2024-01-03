@@ -97,33 +97,8 @@ pt_latlon <- read_csv(
     pt_id = col_double()
   ))
 
-# # Annual Averages Long
-# annual_avg <- read_csv(
-#   file = here::here("Data/projections/all_species_test.csv"), 
-#   col_types = cols(
-#     pt_id = col_double(),
-#     var = col_character(),
-#     val = col_double(),
-#     ref_period = col_character(),
-#     species = col_character(),
-#     scenario = col_character()
-#   ))
-# 
-# # Seasonal Averages Long
-# seasonal_avg <- read_csv(
-#   file = here::here("Data/projections/all_seasons_test.csv"), 
-#   col_types = cols(
-#     Season = col_character(),
-#     pt_id = col_double(),
-#     var = col_character(),
-#     val = col_double(),
-#     ref_period = col_character(),
-#     species = col_character(),
-#     scenario = col_character()
-#   ))
 
-
-# Annual Averages and the Baseline Difference
+# Annual Averages and the Baseline Difference for 2050 & 2100
 clean_annual_wide <- read_csv(
   file = here::here("Data/projections/annual_proj_wide.csv"),
   col_types = cols(
@@ -694,11 +669,15 @@ bivar_map_ssp5 + inset_element(leg,
                                top = 0.35)
 
 
-#####  Sandbox Code  ####
 
 
 
 
+
+
+
+####_________####
+# Un developed
 
 
 ####  Leaflet Maps - Data not hooked up  ####
@@ -751,4 +730,47 @@ lobster_map <- leaflet_widget %>%
             title = "Log(Biomass)",
             pal = fill_palette, 
             values = c(0, max(lob_demo$Log_Biomass)))
+
+
+
+
+
+####  TMAP  ####
+library(tmap)
+
+
+
+
+# Should be able to juest run with it
+
+
+
+
+####  Colourist Maps  ####
+library(colorist)
+library(gmRi)
+
+# load example data, field sparrow occurrence probability
+#data("fiespa_occ")
+# Should be a raster stack
+# Could do different decades to show movement?
+
+# Lets see if Andrew has some stacks handy, na
+coca_path <- cs_path("mills", "Projects/COCA19_Projections/projections")
+lob_ssp1 <- readRDS(str_c(coca_path, "Lobster_full_CMIP6_SSP1_26_mean_projections.rds"))
+lob_ssp1[[1]] %>% names()
+raster::stack()
+
+
+diff_dataList
+
+# calculate distribution metrics
+r <- metrics_distill(fiespa_occ)
+
+# generate hcl color palette
+pal <- palette_timecycle(fiespa_occ)
+
+# map
+map_single(r, pal, lambda_i = -2)
+
 

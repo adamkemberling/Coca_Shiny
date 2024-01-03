@@ -9,7 +9,8 @@
 
 
 ####__________________####
-# Inputs from: vast_projection_preprocessing.R
+# Inputs were from: vast_projection_preprocessing.R
+# Inputs now from: vast_2050_2100_summaries.R
 # Outputs:
 # here::here("Data/projections/annual_proj_wide.csv")
 # here::here("Data/projections/seasonal_proj_wide.csv")
