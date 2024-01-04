@@ -23,9 +23,11 @@ sf_use_s2(FALSE)
 unique_pts <- read_sf(here::here("Data/spatial/unique_location_coords.csv"))
 
 
-# Density data for all species
+# Density data for all species - after 5-year rolling avg
 all_density_results <- read_csv(here::here("Data/projections/VAST_all_densities_all_species.csv"))
-#rolling_dens <- all_density_results %>% split(.$VAST_id) 
+
+# Density data for baseline period - no 5-year roll done
+all_baseline_periods <- read_csv(here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
 
 
 ####  Regional Boundaries  ####
@@ -151,6 +153,53 @@ filter_within <- function(unique_pts_sf, shape_in, region_title, plot_check = FA
 
 
 
+# Change the functiona little to just use the baseline densities
+filter_within_baselines <- function(unique_pts_sf, shape_in, region_title, plot_check = FALSE){
+  
+  domain_use <- st_make_valid(shape_in) %>% st_transform(st_crs(unique_pts_sf))
+  
+  # Overlay Points with study area:
+  # Use drop_na to drop points that picked up no informaiton in join
+  unique_pts_within <- st_join(x = unique_pts_sf, y = domain_use) %>% drop_na()
+  
+  # Verify the deed is done:
+  if(plot_check){
+    p <- unique_pts_within %>%
+      ggplot() +
+      geom_sf(data = domain_use) +
+      geom_sf() +
+      labs(title = region_title)
+    return(p)
+  }
+  
+  
+  # Now we can use those points to filter and summarise
+  # Can then average whatever is within
+  # Already comes in as year month and season
+  region_dat <- all_baseline_periods %>% 
+    filter(pt_id %in% unique_pts_within$pt_id) %>% 
+    mutate(region = region_title) %>% 
+    group_by(VAST_id, region, Year, Month, Season) %>% 
+    summarise(
+      across(.cols = c("Prob_0.1", "Prob_0.5", "Prob_0.9"), 
+             .fns = ~mean(.x, na.rm = T), 
+             .names = "mean_{.col}"),
+      .groups = "drop") 
+  
+  # add species and scenario details from the list's names
+  region_dat <- region_dat %>% 
+    mutate(
+      VAST_id = str_replace(VAST_id, "_full_", "-")) %>% 
+    separate(VAST_id, into = c("species", "scenario"), sep = "-") %>% 
+    mutate(
+      species = str_replace_all(species, "_", " "),
+      species = tolower(species),
+      scenario = str_remove(scenario, "_mean"))
+  return(region_dat)
+  
+}
+
+
 # Test one area
 filter_within(unique_pts_sf = unique_pts_sf, shape_in = gom_epu, region_title = "GOM_epu", plot_check = T)
 gom_dens <- filter_within(unique_pts_sf = unique_pts_sf, shape_in = gom_epu, region_title = "GOM_epu")
@@ -249,15 +298,29 @@ filter_within(unique_pts_sf = unique_pts_sf, shape_in = fprints$`PORTLAND, ME`, 
 filter_within(unique_pts_sf = unique_pts_sf, shape_in = fprints$`STONINGTON, ME`, region_title = "Stonington Maine", plot_check = T)
 
 
+
+
+
+
+
+
 # Run the regional summaries, pray that drop_na isnt an issue
 community_footprint_densities <- imap_dfr(
   fprints, ~filter_within(unique_pts_sf = unique_pts_sf, shape_in = .x, region_title = .y))
+
+# Run it for baseline conditions
+community_baseline_densities <- imap_dfr(
+  fprints, ~filter_within_baselines(unique_pts_sf = unique_pts_sf, shape_in = .x, region_title = .y))
+
+
+
 
 # Save the files
 
 
 # Save these somewhere:
 write_csv(community_footprint_densities, here::here("Data/projections/annual_community_footprint_projections.csv"))
+write_csv(community_baseline_densities, here::here("Data/projections/baseline_community_footprint_projections.csv"))
 
 
 

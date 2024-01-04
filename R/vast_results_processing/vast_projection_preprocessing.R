@@ -303,11 +303,43 @@ all_density_results <- rolling_dens %>%
 
 
 #  Starting point: density estimates
-density_estimates 
+density_estimates[[1]]
 
 # Ending structure: all_Density_results
 all_density_results <- rolling_dens %>% 
   bind_rows(.id = "VAST_id")
+
+# Need: Year, Month, Season, pt_id
+# We want the average across years 2010-2019
+densities_baseline_preroll <- density_estimates %>% 
+  map_dfr(function(x){
+    x %>% 
+      mutate(
+        Year = format(Time, "%Y"),
+        Month = format(Time, "%m"), 
+        Season = ifelse(
+          grepl("03", Month), "Spring", 
+          ifelse(grepl("07", Month), "Summer", "Fall"))) %>% 
+      filter(Year %in% c(2010:2019)) %>% 
+      mutate(Year = "2010-2019") %>% 
+      group_by(Year, Month, Season, Lat, Lon) %>% 
+      summarise(across(c("Prob_0.5", "Prob_0.1", "Prob_0.9"), ~mean(.x, na.rm = T)),
+                .groups = "drop")
+  },.id = "VAST_id") %>% 
+  left_join(unique_pts, join_by(Lat, Lon))
+
+
+
+# Save the baseline average densities
+write_csv(densities_baseline_preroll, here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+
+
+
+
+
+
+
+
 
 
 ####_______________________####

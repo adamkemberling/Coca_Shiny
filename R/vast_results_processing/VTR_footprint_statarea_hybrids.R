@@ -359,6 +359,10 @@ unique_pts <- read_sf(here::here("Data/spatial/unique_location_coords.csv"))
 # Density data for all species
 all_density_results <- read_csv(here::here("Data/projections/VAST_all_densities_all_species.csv"))
 
+
+# Density data for baseline period
+all_baseline_periods <- read_csv(here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+
 # input 1: Unique locations as sf
 unique_pts_sf <- unique_pts %>% st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F)
 
@@ -417,7 +421,13 @@ filter_within <- function(unique_pts_sf, shape_in, region_title, plot_check = FA
 
 
 
+
+
+
 ####  Process Hybrids  ####
+
+
+# 1. Projected Densities:
 hybrid_densities <- footprint_rules %>% 
   filter(!use_fprint) %>% 
   split(.$community_id) %>% 
@@ -435,7 +445,7 @@ hybrid_densities <- footprint_rules %>%
       unique_pts_sf = unique_pts_sf,
       shape_in = hybrid_fprint, 
       region_title = str_c(hybrid_community$community_id[1], " - statistical zone overlap"), 
-      plot_check = T)
+      plot_check = F)
     
   })
 
@@ -454,8 +464,82 @@ hybrid_densities %>%
 
 
 
+# 2. Baseline Densities:
+
+# Change the functiona little to just use the baseline densities
+filter_within_baselines <- function(unique_pts_sf, shape_in, region_title, plot_check = FALSE){
+  
+  domain_use <- st_make_valid(shape_in) %>% st_transform(st_crs(unique_pts_sf))
+  
+  # Overlay Points with study area:
+  # Use drop_na to drop points that picked up no informaiton in join
+  unique_pts_within <- st_join(x = unique_pts_sf, y = domain_use) %>% drop_na()
+  
+  # Verify the deed is done:
+  if(plot_check){
+    p <- unique_pts_within %>%
+      ggplot() +
+      geom_sf(data = domain_use) +
+      geom_sf() +
+      labs(title = region_title)
+    return(p)
+  }
+  
+  
+  # Now we can use those points to filter and summarise
+  # Can then average whatever is within
+  # Already comes in as year month and season
+  region_dat <- all_baseline_periods %>% 
+    filter(pt_id %in% unique_pts_within$pt_id) %>% 
+    mutate(region = region_title) %>% 
+    group_by(VAST_id, region, Year, Month, Season) %>% 
+    summarise(
+      across(.cols = c("Prob_0.1", "Prob_0.5", "Prob_0.9"), 
+             .fns = ~mean(.x, na.rm = T), 
+             .names = "mean_{.col}"),
+      .groups = "drop") 
+  
+  # add species and scenario details from the list's names
+  region_dat <- region_dat %>% 
+    mutate(
+      VAST_id = str_replace(VAST_id, "_full_", "-")) %>% 
+    separate(VAST_id, into = c("species", "scenario"), sep = "-") %>% 
+    mutate(
+      species = str_replace_all(species, "_", " "),
+      species = tolower(species),
+      scenario = str_remove(scenario, "_mean"))
+  return(region_dat)
+  
+}
+
+
+# Run that new function
+hybrid_baseline_densities <- footprint_rules %>% 
+  filter(!use_fprint) %>% 
+  split(.$community_id) %>% 
+  map_dfr(function(hybrid_community){
+    
+    # Subset the zone id's from the statistical zones shapefiles
+    hybrid_fprint <- filter(stat_zones, Id %in% unlist(hybrid_community$"zone_ids")) %>% 
+      st_union() %>% 
+      st_as_sf() %>%  
+      mutate(community_id = hybrid_community$community_id[1]) %>% 
+      rename(geometry = x)
+    
+    # Then use that to perform a masking operation
+    filter_within_baselines(
+      unique_pts_sf = unique_pts_sf,
+      shape_in = hybrid_fprint, 
+      region_title = str_c(hybrid_community$community_id[1], " - statistical zone overlap"), 
+      plot_check = F)
+    
+  })
+
+
+
 ####  Save Hybrids  ####
 
 # Save these somewhere:
 write_csv(hybrid_densities, here::here("Data/projections/annual_small_footprint_szone_overlap_projections.csv"))
+write_csv(hybrid_baseline_densities, here::here("Data/projections/baseline_small_footprint_szone_overlap_projections.csv"))
 
