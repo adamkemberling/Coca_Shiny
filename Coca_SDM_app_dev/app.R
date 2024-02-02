@@ -208,19 +208,21 @@ ui <- page_navbar(
             ##### b. Value Boxes  ####
             # Second layout wrap height for the species metrics  
             layout_column_wrap(
-              fill = FALSE, row_heights = 300,width = "300px",
+              fill = FALSE, 
+              row_heights = 300,
+              width = "300px",
               
               # Value Box 1: Temperature
               value_box(
                   title = "Preferred Temperature",
-                  value = str_c(45, deg_c),
+                  value = str_c(9, deg_c),
                   showcase = bsicons::bs_icon("thermometer-sun")
                 ),
               
               # Value Box 2: Depth
               value_box(
                   title = "Preferred Depth",
-                  value = str_c(120, " meters"),
+                  value = str_c(67, " meters"),
                   showcase = bsicons::bs_icon("align-bottom"),
                   theme_color = "dark"
                 ),
