@@ -137,14 +137,14 @@ sf_meshify <- function(input_df, coords = c("Lon", "Lat"), length_km = 25, in_cr
 }
 
 
-# Function for mapping the baseline conditions
-map_baseline <- function(species_choice, ssp_scenario){
-  
-  
-  
-  
-  
-}
+# # Function for mapping the baseline conditions
+# map_baseline <- function(species_choice, ssp_scenario){
+#   
+#   
+#   
+#   
+#   
+# }
 
 
 # My bsquare

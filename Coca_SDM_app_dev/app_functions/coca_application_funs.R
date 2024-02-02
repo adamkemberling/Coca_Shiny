@@ -199,7 +199,9 @@ ssp_proj_map <- function(
   
   # Plot the projected biomass
   projection_map <- ggplot() + 
-    geom_sf(data = density_sf, aes(geometry = geometry, fill = val, alpha = I(val_alpha)), color = "transparent")
+    geom_sf(
+      data = density_sf, 
+      aes(geometry = geometry, fill = val, alpha = I(val_alpha)), color = "transparent")
   
   # Overlay the EPU bounds
   if(add_labels){projection_map <- projection_map + 
