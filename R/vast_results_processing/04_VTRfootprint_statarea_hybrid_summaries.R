@@ -1,5 +1,5 @@
 # Footprint and VTR intersections:
-# 
+# Create intersection polygons for very small community footprints
 
 
 ####  Libraries  ####
@@ -57,8 +57,8 @@ fprints <- imap(fprints, ~st_as_sf(.x) %>%
 
 
 
-
-####  Overlay Check  ####
+####______________________####
+#### 1. Checking Fottprint & Statzone Overlays  ####
 # So for this check we just want to return the stat areas that intersect, we don't need to
 # pull the actual areas out here. keep it simple
 
@@ -202,8 +202,8 @@ overlap_maps$`NEW BEDFORD, MA`
 size_order %>% gt()
 
 
-
-####  Decision Making  ####
+####___________________####
+####  2. Rule-Based Overlap Footprints  ####
 # So it seems like we get more than we bargained for with larger footprints
 # Good example is all of chesapaeake bay with cape may:
 
@@ -267,8 +267,10 @@ min_overlap_ids <- function(fp, min_cutoff){
 }
 
 
-# Can we display the impact visually
 
+
+
+# Display the impact visually
 rule_based_overmaps <- map(names(fprints), function(x){
   overlap_maps[[x]] +
     geom_sf(data = filter(
@@ -343,8 +345,9 @@ footprint_rules <- imap_dfr(
 footprint_rules
 
 
-
-####  Perform Masking for Hybrids ####
+####______________________________#####
+#### 3. VAST Output Timeseries ####
+####  Perform Masking for Hybrid-Areas ^ ####
 
 # Taking function from vast_regional_summaries.R
 

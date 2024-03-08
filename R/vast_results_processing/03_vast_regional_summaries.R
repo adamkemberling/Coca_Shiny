@@ -99,10 +99,12 @@ zones <- stat_zones %>%
 # input 1: Unique locations as sf
 unique_pts_sf <- unique_pts %>% st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F)
 
-# input 2: shapefile to check
-shape_in <- gom_epu
+# # input 2: shapefile to check
+# shape_in_test <- gom_epu
 
 
+
+#### a. Filter Density Output Based on Regional Overlap  ####
 
 
 # Make a function to do it a bunch
@@ -153,6 +155,10 @@ filter_within <- function(unique_pts_sf, shape_in, region_title, plot_check = FA
 
 
 
+
+
+#### b. Baseline Periods Average Overlays  ####
+
 # Change the functiona little to just use the baseline densities
 filter_within_baselines <- function(unique_pts_sf, shape_in, region_title, plot_check = FALSE){
   
@@ -200,12 +206,15 @@ filter_within_baselines <- function(unique_pts_sf, shape_in, region_title, plot_
 }
 
 
+
+
+
+#### c.  Proof of Concept:  ####
 # Test one area
 filter_within(unique_pts_sf = unique_pts_sf, shape_in = gom_epu, region_title = "GOM_epu", plot_check = T)
-gom_dens <- filter_within(unique_pts_sf = unique_pts_sf, shape_in = gom_epu, region_title = "GOM_epu")
-
 
 # Check it as a timeline
+gom_dens <- filter_within(unique_pts_sf = unique_pts_sf, shape_in = gom_epu, region_title = "GOM_epu")
 gom_dens %>% 
   filter(species == "lobster",
          scenario == "CMIP6_SSP5_85") %>% 
@@ -213,7 +222,7 @@ gom_dens %>%
   geom_line()
 
 
-####  Process Regions ####
+####  Process List of Regions ####
 
 
 
@@ -239,10 +248,7 @@ region_list <- list(
   "NY / NJ" = zones$`NY / NJ`,
   "NC / VA / DE" = zones$`NC / VA / DE`
   
-  
-  #
-  
-  # # Survey areas
+  # # Large Survey areas
   # "Gulf of Maine"          = trawl_gom,
   # "US Survey Area"         = trawl_full,
   # "Canadian Survey Area"   = dfo_area,
@@ -277,6 +283,12 @@ write_csv(all_regional_densities, here::here("Data/projections/annual_regional_s
 
 
 
+
+
+
+####_________________####
+
+#### VTR Footprint Summaries  ####
 
 
 ##### Community Fishing Footprints  ####

@@ -14,7 +14,7 @@ library(rnaturalearth)
 library(gmRi)
 
 # Turn off s2 for spatial overlay
-sf_use_s2(use_s2)
+sf_use_s2(FALSE)
 
 
 ####  Master Data  ####
@@ -23,6 +23,10 @@ unique_pts <- read_sf(here::here("Data/spatial/unique_location_coords.csv"))
 # Density data
 all_density_results <- read_csv(here::here("Data/projections/VAST_all_densities_all_species.csv"))
 rolling_dens <- all_density_results %>% split(.$VAST_id) 
+
+
+# Study area outline shapefile
+domain_use <- st_read(str_c(cs_path("mills", "Projects/sdm_workflow/data 2/supporting/region_shapefile"), "full_survey_region.shp"))
 
 
 
@@ -252,7 +256,6 @@ horizon_summ_szns_ssp1 <- imap_dfr(
 # Run it just for SSp5
 
 
-
 # Run it for all seasons combined: SSP5
 horizon_summ_ssp5 <- imap_dfr(
   rolling_dens[str_detect(names(rolling_dens), "SSP5")], 
@@ -281,6 +284,9 @@ horizon_summ_ssp5 <- imap_dfr(
     # return the summary
     return(summary_out)
   })
+
+
+
 
 # Run it grouped on seasons
 horizon_summ_szns_ssp5 <- imap_dfr(
@@ -312,6 +318,9 @@ horizon_summ_szns_ssp5 <- imap_dfr(
     
   })
 
+
+
+####  Rejoin the Scenarios  ####
 
 
 # Join the two scenario's horizon summaries into one file

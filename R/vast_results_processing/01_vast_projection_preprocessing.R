@@ -21,10 +21,12 @@
 library(tidyverse)
 library(raster)
 library(sf)
-library(terra)
+# library(terra)
 library(rnaturalearth)
 library(gmRi)
 
+conflicted::conflict_prefer("filter", "dplyr")
+conflicted::conflict_prefer("select", "dplyr")
 
 
 ####  Shapefiles  ####
@@ -147,7 +149,7 @@ str(test)
 
 
 
-#### 3. Calculate a Rolling Mean of Predicted Density  ####
+#### 3. Perform a 5-year Rolling Mean of Predicted Density  ####
 
 # This would be so much faster in python...
 # Changes:
@@ -198,6 +200,9 @@ calc_seasyr_rollmean_func<- function(df, window_size = 5) {
 rolling_dens <- density_estimates %>% map(calc_seasyr_rollmean_func)
 
 
+
+
+
 # Here is what we have for every year and season...
 rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% 
   filter(Year == 1985) %>% 
@@ -212,30 +217,145 @@ rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>%
   labs(color = "Density kg/km2")
 
 
+# Or for one of the new species
+rolling_dens$BlackSeaBass_full_CMIP6_SSP5_85_mean %>% 
+  filter(Year == 1985) %>% 
+  ggplot() +
+  geom_point(aes(Lon, Lat, color = Prob_0.5)) + 
+  facet_wrap(~Season, nrow = 3) +
+  theme_dark() +
+  scale_color_distiller(
+    palette = "RdYlBu") +
+  labs(color = "Density kg/km2")
 
+rolling_dens$Redfish_full_CMIP6_SSP5_85_mean %>% 
+  filter(Year == 1985) %>% 
+  ggplot() +
+  geom_point(aes(Lon, Lat, color = Prob_0.5)) + 
+  facet_wrap(~Season, nrow = 3) +
+  theme_dark() +
+  scale_color_distiller(
+    palette = "RdYlBu") +
+  labs(color = "Density kg/km2")
 
 
 
 #### 4.  Assign/Verify Location ID's  ####
 
-# Do the base coordinates differ from the projection coordinates? Yes
-# Are the lat and Lon values the same across projections? Yes!
-ssp1_pts <- rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat)
-ssp5_pts <- rolling_dens$Butterfish_full_CMIP6_SSP5_85_mean %>% distinct(Lon, Lat)
-sum(ssp1_pts != ssp5_pts) # We good!
+# # Do the base coordinates differ from the projection coordinates? Yes
+# # Are the lat and Lon values the same across projections? Yes!
+# ssp1_pts <- rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat)
+# ssp5_pts <- rolling_dens$Butterfish_full_CMIP6_SSP5_85_mean %>% distinct(Lon, Lat)
+# sum(ssp1_pts != ssp5_pts) # We good!
+
+# # Do the new species differ from the old species coordinates? yes...
+# # Are they atleast consistent between themselves? yes...
+old_pts_1 <- rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat) %>% arrange(Lon, Lat)
+new_pts_1 <- rolling_dens$BlackSeaBass_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat) %>% arrange(Lon, Lat)
+new_pts_2 <- rolling_dens$AtlanticMackerel_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat) %>% arrange(Lon, Lat)
+sum(new_pts_1 != old_pts_1)
+sum(new_pts_1 != new_pts_2)
+
+
+# # Whats with these NAs
+# nrow(old_pts_1); nrow(new_pts_1) # same number of rows
+# # 197 mismatches, apparently
+# new_pts_1[which(new_pts_1$Lon != old_pts_1$Lon),]  # 8 Longitude mismatches
+# new_pts_1[which(new_pts_1$Lat != old_pts_1$Lat),]  # 1 79 Lat mismatches
+# old_pts_1 %>% filter(is.na(Lon))
+# new_pts_1 %>% filter(is.na(Lon))
+# 
+# 
+# 
+# # Friggin match them up...
+# ggplot() +
+#   geom_point(data = old_pts_1, aes(Lon, Lat, color = "old nodes"), alpha = 0.25, shape = 3) +
+#   #geom_point(data = new_pts_1, aes(Lon, Lat, color = "new nodes"), alpha = 0.25, shape = 3) +
+#   geom_point(data = new_pts_1[which(new_pts_1$Lon != old_pts_1$Lon),], aes(Lon, Lat, color = "Longitude Mismatch"), alpha = 0.5) +
+#   geom_point(data = new_pts_1[which(new_pts_1$Lat != old_pts_1$Lat),], aes(Lon, Lat, color = "Latitude Mismatch"), alpha = 0.5)
+# old_pts_1$Lon[1:5]
+# new_pts_1$Lon[1:5]
+# old_pts_1$Lat[1:5]
+# new_pts_1$Lat[1:5]
+# 
+# new_pts_sf <- st_as_sf(new_pts_1, coords = c("Lon", "Lat"), crs = 4326, remove = F) %>% setNames(c("lon_new", "lat_new", "geometry"))
+# old_pts_sf <- st_as_sf(old_pts_1, coords = c("Lon", "Lat"), crs = 4326, remove = F)
+# 
+# # If you order them ahead of time, and they are the same number of nodes 
+# # in roughly the same place we should be able to just replace them...
+# st_nearest_feature(new_pts_sf, old_pts_sf)
+
+
+
+####  Perform Node Alignment  ####
+
+
+# Perform node_matching for the stupid new species
+match_nodes <- function(new_densities, old_densities){
+  
+  # Make sure the coordinates are aligned
+  new_densities <- new_densities %>% arrange(Lon, Lat)
+  new_pts <- new_densities %>% distinct(Lon, Lat) 
+  new_pts_sf <- new_pts %>% st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F)
+  
+  # Do so for the other points that were using for unique_pts
+  old_densities <- old_densities %>% arrange(Lon, Lat)
+  old_pts <- old_densities %>% distinct(Lon, Lat)
+  old_pts_sf <- st_as_sf(old_pts, coords = c("Lon", "Lat"), crs = 4326, remove = F)
+  
+  # take coordinates from the nearest node in the old locations
+  new_coords <- st_coordinates(old_pts_sf)[st_nearest_feature(new_pts_sf, old_pts_sf),]
+  
+  # Join them to new_pts
+  new_pts <- rename(new_pts, lon_out = Lon, lat_out = Lat)
+  new_pts$Lon <- new_coords[,1]
+  new_pts$Lat <- new_coords[,2]
+  
+  # Now replace them and return the file
+  out_df <- new_densities %>% 
+    rename(lon_out = Lon, lat_out = Lat) %>% 
+    left_join(new_pts) %>% 
+    select(-c(lon_out, lat_out))
+  
+  return(out_df)
+  
+}
+
+
+
+# Perform the switcheroo
+rolling_dens <- map(rolling_dens, ~match_nodes(.x, old_densities = rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean))
+
+# double check
+# # Do the new species differ from the old species coordinates? NO
+# # Are they atleast consistent between themselves? yes...
+old_pts_1 <- rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat) %>% arrange(Lon, Lat)
+new_pts_1 <- rolling_dens$BlackSeaBass_full_CMIP6_SSP1_26_mean %>% distinct(Lon, Lat) %>% arrange(Lon, Lat)
+sum(new_pts_1 != old_pts_1)
+
+
+
+
+#### Pull Out Node Coordinates as Their Own Dataset  ####
+
+
+# # ^ This is the key to matching data to the correct spatial feature
+# # This is a key for lat/lon positioning that matches to rolling_dens
+# unique_pts %>% ggplot(aes(Lon, Lat, color = pt_id)) + geom_point() + theme_void()
 
 
 # Get the locations as their own thing
 unique_pts <- rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% 
   distinct(Lon, Lat) %>% 
+  arrange(Lon, Lat) %>% 
   mutate(pt_id = row_number())
+
 
 # Pair the pt_id back into the main dataset
 rolling_dens <- map(rolling_dens, ~left_join(.x, unique_pts, by = join_by(Lat, Lon)))
 
-# ^ This is the key to matching data to the correct spatial feature
-# This is a key for lat/lon positioning that matches to rolling_dens
-unique_pts %>% ggplot(aes(Lon, Lat, color = pt_id)) + geom_point() + theme_void()
+
+
 
 ##### Save Unique Locations  #### 
 # write_csv(unique_pts, here::here("Data/spatial/unique_location_coords.csv"))
@@ -244,12 +364,28 @@ unique_pts %>% ggplot(aes(Lon, Lat, color = pt_id)) + geom_point() + theme_void(
 
 
 
+#### 5. Saving Rolling Average Densities  ####
+
+# Right now we have density estimates for all the ensemble means & (10th, 90th percentiles):
+all_density_results <- rolling_dens %>% 
+  bind_rows(.id = "VAST_id")
 
 
-##### Confirm Data within Study Area  ####
+# Save here, and split the subroutines off into their own scripts
+write_csv(all_density_results, here::here("Data/projections/VAST_all_densities_all_species.csv"))
 
-# Give all the locations an ID that can be matched to a polygon geometry
-# Do all the processing as a dataframe, then add the geometry on at the end
+
+
+
+
+
+
+
+##### Validate all Data is within Study Area  ####
+
+# We've given all the locations an ID that can be matched to a polygon geometry
+# Doing so lets us do all the processing steps as a regular dataframe, 
+# then add the geometry on at the end before plotting
 
 
 # Study area outline shapefile
@@ -284,57 +420,60 @@ unique_pts_within %>%
 
 
 
-#### 5. Saving Rolling Average Densities  ####
-
-# Right now we have density estimates for all the ensemble means & (10th, 90th percentiles):
-all_density_results <- rolling_dens %>% 
-  bind_rows(.id = "VAST_id")
-
-
-# # Save here, and split the subroutines off into their own scripts
-# write_csv(all_density_results, here::here("Data/projections/VAST_all_densities_all_species.csv"))
 
 
 
 
-####  Saving Baseline Average Densities 2010-2019  ###
+
+
+
+
+
+####_______________________####
+
+####  Side Deliverable: Baseline Densities:  ####
+
+
+
+####  Baseline (2010-2019) Average Densities   
 # Once we have baselines without the rolling average, Carly needs them cropped to
 # the different footprints
 
 
-# #  Starting point: density estimates
-# density_estimates[[1]]
-# 
-# # Ending structure: all_Density_results
-# all_density_results <- rolling_dens %>% 
-#   bind_rows(.id = "VAST_id")
-# 
-# # Need: Year, Month, Season, pt_id
-# # We want the average across years 2010-2019
-# densities_baseline_preroll <- density_estimates %>% 
-#   map_dfr(function(x){
-#     x %>% 
-#       mutate(
-#         Year = format(Time, "%Y"),
-#         Month = format(Time, "%m"), 
-#         Season = ifelse(
-#           grepl("03", Month), "Spring", 
-#           ifelse(grepl("07", Month), "Summer", "Fall"))) %>% 
-#       filter(Year %in% c(2010:2019)) %>% 
-#       mutate(Year = "2010-2019") %>% 
-#       group_by(Year, Month, Season, Lat, Lon) %>% 
-#       summarise(across(c("Prob_0.5", "Prob_0.1", "Prob_0.9"), ~mean(.x, na.rm = T)),
-#                 .groups = "drop")
-#   },.id = "VAST_id") %>% 
-#   left_join(unique_pts, join_by(Lat, Lon))
-# 
-# 
-# 
-# # Save the baseline average densities
-# write_csv(densities_baseline_preroll, here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
-# 
+#  Starting point: density estimates
+density_estimates[[1]]
+
+# Ending structure we want to emulate: all_Density_results
+all_density_results <- rolling_dens %>%
+  bind_rows(.id = "VAST_id")
+
+# Need: Year, Month, Season, pt_id
+# We want the average across years 2010-2019
+densities_baseline_preroll <- density_estimates %>%
+  map_dfr(function(x){
+    x <- x %>%
+      mutate(
+        Year = format(Time, "%Y"),
+        Month = format(Time, "%m"),
+        Season = ifelse(
+          grepl("03", Month), "Spring",
+          ifelse(grepl("07", Month), "Summer", "Fall"))) %>%
+      filter(Year %in% c(2010:2019)) %>%
+      mutate(Year = "2010-2019") %>%
+      group_by(Year, Month, Season, Lat, Lon) %>%
+      summarise(across(c("Prob_0.5", "Prob_0.1", "Prob_0.9"), ~mean(.x, na.rm = T)),
+                .groups = "drop")
+    
+    # Perform the node matching
+    match_nodes(x, old_densities = rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean)
+    
+  },.id = "VAST_id") %>%
+  left_join(unique_pts, join_by(Lat, Lon))
 
 
+
+# Save the baseline average densities
+write_csv(densities_baseline_preroll, here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
 
 
 
