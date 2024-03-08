@@ -58,7 +58,7 @@ scenarios cross important temperature milestones above our baseline
 period climate of 2010-2019 for our study area.
 
 We end with two files:\
-1. The average annual densities at these horizons:
+1. The average annual densities at these horizons:\
 `Data/projections/Cmilestones_all_species_test.csv`\ 
 2. The average seasonal densities at these horizons:\
 `Data/projections/Cmilestones_all_seasons_test.csv`
@@ -120,6 +120,10 @@ larger region might better reflect the projected climate and fisheries
 outcomes. This script details the rule based approach used to create new
 footprints for small communities that uses the statistical areas for
 fisheries management.
+
+The following maps display how the rule based areas are constructed. VTR footprints in orange are 
+overlaid against statistical areas outlined in black. If there is sufficient overlap the statistical 
+areas will be used. Areas in green are statistical zones that satisfy this minimum overlap rule.
 
 ![](images/clipboard-633921838.png)
 
