@@ -72,7 +72,9 @@ custom_theme <- bs_theme(
 # Fix Species names:
 name_fix <- tribble(
   ~"species",              ~"comname",
-  "butterfish",            "butterfish",              
+  "atlanticmackerel",      "Atlantic mackerel",              
+  "butterfish",            "butterfish",     
+  "blackseabass",          "black sea bass",
   "cod",                   "Atlantic cod",              
   "haddock",               "haddock",             
   "hagfish",               "hagfish",                
@@ -86,7 +88,8 @@ name_fix <- tribble(
   "northernsandlance",     "northern sandlance",               
   "oceanquahog",           "ocean quahog",                
   "pollock",               "pollock",                
-  "reddeepseacrab",        "red deepsea crab",               
+  "reddeepseacrab",        "red deepsea crab",      
+  "redfish",               "acadian redfish",
   "redhake",               "red hake",                
   "rockcrab",              "rock crab",               
   "scallop",               "scallop",              

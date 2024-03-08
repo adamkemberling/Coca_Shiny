@@ -7,11 +7,16 @@ library(sf)
 library(gmRi)
 library(tidyverse)
 
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("filter", "dplyr")
+
 
 # Fix Species names:
 name_fix <- tribble(
   ~"species",              ~"comname",
-  "butterfish",            "butterfish",              
+  "atlanticmackerel",      "Atlantic mackerel",              
+  "butterfish",            "butterfish",     
+  "blackseabass",          "black sea bass",
   "cod",                   "Atlantic cod",              
   "haddock",               "haddock",             
   "hagfish",               "hagfish",                
@@ -25,7 +30,8 @@ name_fix <- tribble(
   "northernsandlance",     "northern sandlance",               
   "oceanquahog",           "ocean quahog",                
   "pollock",               "pollock",                
-  "reddeepseacrab",        "red deepsea crab",               
+  "reddeepseacrab",        "red deepsea crab",
+  "redfish",               "acadian redfish",
   "redhake",               "red hake",                
   "rockcrab",              "rock crab",               
   "scallop",               "scallop",              
@@ -63,17 +69,19 @@ Grand mean/sd of the covariates can be used to un-scale these relationships.
 
 # Path to preference curve results
 pref_path <- cs_path("mills", "Projects/COCA19_projections/tables")
-pref_names <- list.files(pref_path, pattern = "full_covariate_effects.rds") %>% str_remove_all("_full_covariate_effects.rds") %>% tolower()  
+pref_names <- list.files(pref_path, pattern = "full_covariate_effects.rds") %>% 
+  str_remove_all("_full_covariate_effects.rds") %>% 
+  tolower()  
 pref_dat <- map(list.files(pref_path, pattern = "full_covariate_effects.rds", full.names = T), read_rds) %>% 
   setNames(pref_names)
 
 
 # Grand means for re-scaling
 rescale_df <- tribble(
-  ~"Covariate",   ~"gmean", ~"gsd",
-  "Depth",         123.47, 100.2,
-  "SST_seasonal",  11.11,  4.55,
-  "BT_seasonal",   7,      2.72
+  ~"Covariate",   ~"gmean",  ~"gsd",
+  "Depth",         123.47,   100.2,
+  "SST_seasonal",  11.11,    4.55,
+  "BT_seasonal",   7,        2.72
 )
 
 
@@ -176,10 +184,13 @@ mean_depths <- map_dfr(masked_depths, ~cellStats(.x, stat = mean, na.rm = T) %>%
                        .id = "region") %>% 
   mutate(variable = "Depth",
          val = value*-1) %>% 
-  select(- value)
+  dplyr::select(- value)
+
+
 
 
 ####  Streamline ####
+# This section is all about dropping what we don't need to plot
 
 
 # Preference data:
@@ -219,7 +230,15 @@ write_csv(pref_slim, here::here("Coca_SDM_app_dev/app_ready_data/preference_curv
 write_csv(horizon_conditions, here::here("Coca_SDM_app_dev/app_ready_data/projected_environmental_conditions.csv"))
 
 
-####  Load App-Ready  ####
+
+
+
+
+####_______________________####
+
+####  Results in Practice:  ####
+
+####  Load ^App-Ready Data  ####
 
 # load the data 
 pref_data <- read_csv(here::here("Coca_SDM_app_dev/app_ready_data/preference_curve_data.csv")) %>% split(.$comname)
@@ -267,10 +286,12 @@ curve_dat <- left_join(prefs_x, cond_x)
 
 curve_dat %>% glimpse()
 
+deg_sym <- "\u00b0" 
+deg_c <- "\u00b0C"
+deg_f <- "\u00b0F"
 
 
-
-
+# Plotting function to do pref curves
 plot_preference_curves <- function(pref_dat, reactive = F){
   # Set the data
   curve_dat <- pref_dat
@@ -300,7 +321,7 @@ plot_preference_curves <- function(pref_dat, reactive = F){
     facet_grid(region~variable, scales = "free") +
     scale_x_continuous(expand = expansion(add = c(0,0))) +
     scale_y_continuous(expand = expansion(mult = c(0,.4))) +
-    theme_plot() +
+    #theme_plot() +
     labs(
       x = "Covariate Range", 
       title = "Species Preferences & Regional Conditions of a Future Climate", 
