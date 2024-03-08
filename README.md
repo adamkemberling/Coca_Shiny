@@ -18,7 +18,7 @@ Each model follows this naming convention:\
 `{Species}_full_CMIP6_{SSP Scenario}_mean.rds`
 
 **ex.**\
-`AtlanticMackerel_full_CMIP6_SSP1_26_mean`
+`AtlanticMackerel_full_CMIP6_SSP1_26_mean.rds`
 
 ## R/01_vast_projection_preprocessing
 
@@ -59,8 +59,8 @@ period climate of 2010-2019 for our study area.
 
 We end with two files:\
 1. The average annual densities at these horizons:
-`Data/projections/Cmilestones_all_species_test.csv` 2. The average
-seasonal densities at these horizons:
+`Data/projections/Cmilestones_all_species_test.csv`\ 
+2. The average seasonal densities at these horizons:\
 `Data/projections/Cmilestones_all_seasons_test.csv`
 
 These are used to power the maps projecting spatial distributions at
