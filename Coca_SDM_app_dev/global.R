@@ -131,7 +131,8 @@ horizon_year_key_df <- tribble(
 
 
 # Hexagonal grid simple feature geometry
-hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
+#hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
+hex_grid <- read_sf(here::here("Coca_SDM_app_dev/app_ready_data/hex_grid.geojson"))
 
 
 ####_________________________####
