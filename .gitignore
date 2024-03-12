@@ -20,6 +20,7 @@ Coca_SDM_app_dev/app_ready_data/*
 
 # Output files from R CMD build
 /*.tar.gz
+*.zip
 
 # Output files from R CMD check
 /*.Rcheck/
