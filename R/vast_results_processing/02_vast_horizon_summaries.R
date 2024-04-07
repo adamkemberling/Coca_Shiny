@@ -30,6 +30,8 @@ domain_use <- st_read(str_c(cs_path("mills", "Projects/sdm_workflow/data 2/suppo
 
 
 
+
+
 ####  Process Summaries  ####
 
 
@@ -333,6 +335,11 @@ horizons_out <- drop_na(horizons_out)
 
 # Do it again for Seasons
 horizons_out_szns <- drop_na(horizons_out_szns)
+
+
+
+
+
 
 
 #####  Saving Horizon Summaries  ####

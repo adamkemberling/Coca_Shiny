@@ -95,38 +95,47 @@ theme_plot <- function(fontfam = "Avenir", ...){
       panel.spacing.y = unit(1, "lines"),
       
       # Facets
-      strip.text.x = element_textbox(
+      strip.background = element_rect(
+        fill      = "#00736D", 
+        color = "white"),
+      strip.text = element_text(
         color     = "white", 
         face      = "bold",
         size      = 12,
-        fill      = "#00736D",
-        box.color = "#00736D", 
-        family    = fontfam,
-        halign    = 0.5, 
-        valign    = 0.5,
-        linetype  = 1, 
-        r         = unit(5, "pt"), 
-        width     = unit(1, "npc"),
-        height    = unit(2.25, "lines"),
-        padding   = margin(2, 0, 1, 0), 
-        margin    = margin(3, 3, 3, 3)),
-      strip.text.y = element_textbox(
-        color     = "white", 
-        face      = "bold",
-        size      = 12,
-        fill      = "#00736D",
-        box.color = "#00736D", 
-        family    = fontfam,
-        halign    = 0.5, 
-        valign    = 0.5,
-        linetype  = 1, 
-        r         = unit(5, "pt"), 
-        width     = unit(1, "npc"),
-        height    = unit(3.5, "lines"),
-        padding   = margin(2, 0, 1, 0), 
-        margin    = margin(3, 3, 3, 3),
-        orientation = "right-rotated"),
-      strip.background = element_blank(),
+        family    = fontfam),
+      # Using html text boxes for rounded corners
+      # strip.text.x = element_textbox(
+      #   color     = "white", 
+      #   face      = "bold",
+      #   size      = 12,
+      #   family    = fontfam,
+      #   fill      = "#00736D",
+      #   box.color = "#00736D",
+      #   halign    = 0.5,
+      #   valign    = 0.5,
+      #   linetype  = 1,
+      #   r         = unit(5, "pt"),
+      #   width     = unit(1, "npc"),
+      #   height    = unit(2.25, "lines"),
+      #   padding   = margin(2, 0, 1, 0),
+      #   margin    = margin(3, 3, 3, 3)),
+      # strip.text.y = element_textbox(
+      #   color     = "white", 
+      #   face      = "bold",
+      #   size      = 12,
+      #   family    = fontfam,
+      #   fill      = "#00736D",
+      #   box.color = "#00736D",
+      #   halign    = 0.5,
+      #   valign    = 0.5,
+      #   linetype  = 1,
+      #   r         = unit(5, "pt"),
+      #   width     = unit(1, "npc"),
+      #   height    = unit(3.5, "lines"),
+      #   padding   = margin(2, 0, 1, 0),
+      #   margin    = margin(3, 3, 3, 3),
+      #   orientation = "right-rotated"),
+      # strip.background = element_blank(),
       legend.position = "bottom"
       
     ) # close theme()
@@ -532,24 +541,28 @@ plot_preference_curves <- function(pref_dat, reactive = F){
       linewidth = 1.2, key_glyph = draw_key_rect) +
     geom_label(
       data = dlabs, 
-      aes(x = val, y = 0, label = round(val)), 
-      color = "black", 
-      vjust = -1.5, show.legend = F, label.size = 1,
+      aes(x = val, y = I(0.4), label = round(val)), 
+      color = "black", show.legend = F, label.size = 1,
       label.padding = unit(0.7, "lines"), label.r = unit(0.5, "lines")) +
     geom_label(
       data = vlabs, 
-      aes(x = val, y = 0, color = temp_horizon, label = round(val)), 
-      key_glyph = draw_key_rect, vjust = -1.5, label.size = 1,
+      aes(x = val, y = I(.4), color = temp_horizon, label = round(val)), 
+      key_glyph = draw_key_rect, label.size = 1,
       label.padding = unit(0.7, "lines"), label.r = unit(0.5, "lines")) +
     scale_color_manual(values = gmri_cols("orange"), na.translate = F) +
-    facet_grid(region~variable, scales = "free") +
+    facet_grid(
+      region~variable, 
+      scales = "free",
+      labeller = labeller(
+        region = label_wrap_gen(10),
+        variable = label_wrap_gen(10))) +
     scale_x_continuous(expand = expansion(add = c(0,0))) +
     scale_y_continuous(expand = expansion(mult = c(0,.4))) +
     guides(color = guide_legend(override.aes = list(fill = gmri_cols("orange")))) +
     theme_plot() +
     labs(
       title = "Habitat Preferences with Projected Climate Conditions", 
-      subtitle = str_c(str_to_title(species), " | ", horizon, " Climate (", scenario, ": ", period, ")"),
+      subtitle = str_c(str_to_title(species), ":   ", horizon, " Climate (", scenario, ": ", period, ")"),
       color = "Regional Conditions for Future Climate of:",
       x = "Value", 
       y = "Biomass Density kg/km2")

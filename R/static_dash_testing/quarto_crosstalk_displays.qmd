@@ -1,0 +1,989 @@
+---
+title: "COCA Reports - Static Page Development"
+author: "Adam Kemberling"
+url: "https://github.com/adamkemberling"
+affiliation: "Gulf of Maine Research Institute"
+affiliation_url: "https://www.gmri.org"
+description: | 
+  Testing non-shiny interactive displays
+date: "Updated on: `r Sys.Date()`"
+format: 
+  html:
+    toc: true
+    self-contained: true
+    bslib: true
+execute: 
+  echo: false
+  warning: false
+  message: false
+  comment: ""
+  fig.align: center
+---
+
+```{r}
+#| label: packages
+#| include: false
+#| echo: false
+#| warning: false
+
+####  Packages  ####
+{
+  library(here)
+  library(rnaturalearth)
+  library(scales)
+  library(sf)
+  library(gmRi)
+  library(gt)
+  library(gtExtras)
+  library(patchwork)
+  library(tidyverse)
+  library(showtext)
+  library(crosstalk)
+  library(shiny)
+  library(bslib)
+  library(plotly)
+}
+
+# Namespace Conflicts
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("filter", "dplyr")
+
+# Project paths
+mills_path <- cs_path(box_group = "mills")
+project_box_path <- str_c(mills_path, "Projects/COCA19_Projections/")
+projection_res_path <- paste0(project_box_path, "projections/")
+
+# Path to the directory containing the font file (replace with your actual path)
+font_dir <- paste0(system.file("stylesheets", package = "gmRi"), "/GMRI_fonts/Avenir/")
+
+# Register the font
+font_add(
+  family = "Avenir",
+  file.path(font_dir, "LTe50342.ttf"),
+  bold = file.path(font_dir, "LTe50340.ttf"),
+  italic = file.path(font_dir, "LTe50343.ttf"),
+  bolditalic = file.path(font_dir, "LTe50347.ttf"))
+
+# Load the font
+showtext::showtext_auto()
+
+deg_c <- "\u00b0C"
+
+
+# Fix Species names:
+name_fix <- tribble(
+  ~"species",              ~"comname",
+  "atlanticmackerel",      "Atlantic mackerel",              
+  "butterfish",            "butterfish",     
+  "blackseabass",          "black sea bass",
+  "cod",                   "Atlantic cod",              
+  "haddock",               "haddock",             
+  "hagfish",               "hagfish",                
+  "halibut",               "halibut",                
+  "herring",               "herring",               
+  "jonahcrab",             "Jonah crab",                
+  "littleskate",           "little skate",                
+  "lobster",               "American lobster",               
+  "longfinsquid",          "longfin squid",                
+  "monkfish",              "monkfish",                
+  "northernsandlance",     "northern sandlance",               
+  "oceanquahog",           "ocean quahog",                
+  "pollock",               "pollock",      
+  "plaice",                "American plaice",
+  "reddeepseacrab",        "red deepsea crab",      
+  "redfish",               "acadian redfish",
+  "redhake",               "red hake",                
+  "rockcrab",              "rock crab",               
+  "scallop",               "scallop",              
+  "scup",                  "scup",               
+  "shortfinsquid",         "shortfin squid",               
+  "silverhake",            "silver hake",              
+  "smoothskate",           "smooth skate",               
+  "spinydogfish",          "spiny dogfish",               
+  "summerflounder",        "summer flounder",              
+  "thornyskate",           "thorny skate",               
+  "whitehake",             "white hake",               
+  "windowpaneflounder",    "windowpane flounder",              
+  "winterflounder",        "winter flounder",               
+  "winterskate",           "winter skate",                
+  "witchflounder",         "witch flounder",              
+  "yellowtailflounder",    "yellowtail flounder"             
+)
+
+
+
+# Names of species
+species_opts <- sort(unique(name_fix$comname))
+species_opts <- setNames(species_opts, str_to_title(species_opts))
+
+#  SSP scenarios
+scenario_opts <- c(
+  "Fossil-Fueled Development" = "CMIP6_SSP5_85",
+  "Sustainable Development" = "CMIP6_SSP1_26"
+  )
+
+# Temperatures Above Modern Climate
+horizon_vals <- c(0.5, 1, 1.5, 2, 2, 3, 4)
+horizon_opts  <-  str_c(horizon_vals, "C")
+horizon_opts <- setNames(horizon_opts, str_c("+", horizon_vals, deg_c))
+
+
+# Mirror the app functionality
+input <- list(
+  in_species = species_opts[["Haddock"]],
+  in_scenario = scenario_opts[[1]],
+  in_horizon = horizon_opts[[2]]
+)
+
+
+source(here::here("Coca_SDM_app_dev/app_functions/coca_application_funs.R")) # Plotting functions
+```
+
+
+```{r}
+#| label: style-sheet
+#| results: asis
+
+# Use GMRI style
+use_gmri_style_rmd()
+
+```
+
+
+
+# Mimicing Shiny with Quarto + bslib
+
+It was discussed in the last COCA meeting that we need some sort of static display options as an alternative to the shiny app.
+
+An alternative display option that mimics 80% of the functionality is to blend web-based UI displays from {bslib} with some light interactivity that can be hosted as a static webpage.
+
+Here are the components that I'm thinking of:\
+  1. bslib for cards: these create a modern look that would be consistent with shiny. Use these to hold and frame content.\
+  2. crosstalk + ggplot: These two packages together can add interactivity to a static page. If we're smart about the data we need, we can mimic the shiny app functionality but keep it light.\
+  3. Observable.js, there is also an option to build plots/tables/charts with observable for interactivity as well\
+  
+Another interesting but time consuming path would be to try out observable framework:
+https://observablehq.com/framework/
+  
+
+# Content Goals
+
+
+The following lines are notes from Kat:\
+* Make a heading on the front baseline page about what this page is generally about, why am I here. Heading and two sentences\
+* Could not publish yet\
+* Could just make a mini app with two maps of change with different temp thresholds\
+* Be specific on what does say and doesn’t say (e.g. stock recovery status, ecological interactions)\
+* Explaining what a model does and doesn’t do - need a read me on the app\
+* Explaining biomass - better connect to habitat. Habitat suitability that support biomass or something similar. habitat potential/suitability \
+* Baseline and future maps probably most useful \ 
+  
+  
+  
+## Content Cards: bslib
+
+bslib uses the newest bootstrap ui library to generate modern html containers for storing content. The major design element is the content "card".
+
+
+
+## Interactive Data: crosstalk
+
+Crosstalk adds reactivity to static pages along users to select and filter data. Brushing can also be used to highlight data across plots highlighting different dimensions of the same dataset.
+
+
+
+## Observable Interactivity
+
+Observable.js can also be used directly to highlight data interactively without stringing along different r packages.
+
+
+# Actual Content:
+
+
+
+Put actual ideas for content here.
+
+
+
+## 1. Projected Environmental Change
+
+```{r}
+# # These timeseries are pretty useful, going to save them out for use elsewhere:
+# 
+mills_path <- cs_path(box_group = "mills")
+projection_res_path <- str_c(mills_path, "Projects/COCA19_Projections/data/bias_corrected_env_projections/")
+# 
+# # Baseline Period Data
+references_combined <-  read_csv(str_c(projection_res_path, "oisst_soda_regional_timeseries.csv"))
+# 
+# # SSP scenario for regions
+ssps_corrected <-  read_csv(str_c(projection_res_path, "bias_corrected_ssps_regional_timeseries.csv"))
+
+
+
+# Build an intersting plot in plotly
+references_combined <- references_combined %>% filter(Region == "US Survey Area")
+ssps_corrected <- ssps_corrected %>% filter(Region == "US Survey Area")
+
+# Observational Data
+obs_annual <- references_combined  %>% 
+  group_by(year) %>% 
+  summarise(across(c(surf_temp, bot_temp, surf_sal, bot_sal), mean)) %>% 
+  ungroup() 
+
+
+# Wide ssp5 sst
+sst_wide <- ssps_corrected %>% 
+  filter(scenario == "SSP5: 8.5", 
+         variable == "Surface Temperature") %>% 
+  group_by(year, variable) %>% 
+  summarise(
+    across(
+      c(`5th Percentile`, `95th Percentile`, `Ensemble Mean`), 
+      ~mean(.x, na.rm = T))) %>% 
+  ungroup()
+
+
+# Labels for key thresholds on the SST projection
+
+label_df <- filter(sst_wide, year %in% c(2045, 2062, 2081, 2099)) %>% 
+  mutate(
+    label = case_when(
+      year == 2045 ~ str_c("+1", deg_c),
+      year == 2062 ~ str_c("+2", deg_c),
+      year == 2081 ~ str_c("+3", deg_c),
+      year == 2099 ~ str_c("+4", deg_c)), 
+    y = `Ensemble Mean`,
+    x = year)
+
+
+# Plot where real life sits against the climate models
+us_ssp85_sst_projections <- ggplot() +
+  # Confidence Intervals
+  geom_ribbon(
+    data = sst_wide,
+    aes(x = year, ymin = `5th Percentile`, ymax = `95th Percentile`, 
+        fill = "SSP5: 8.5"),
+    color = "white", alpha = 0.2) +
+  geom_line(
+    data = sst_wide,
+    aes(year, `Ensemble Mean`, color = "SSP5: 8.5"),
+    linewidth = 0.8, key_glyph = "timeseries") +
+  # Observational Data
+  geom_line(
+    data = obs_annual, 
+    aes(year, surf_temp, color = "Observed"),
+    linewidth = 1, key_glyph = "timeseries") +
+  # Threshold labels:
+  # threshold error
+  geom_point(
+    data = label_df,
+    aes(x, y), shape = "|", size = 4) +
+  geom_text(
+    data = label_df, size =5,
+    aes(x,y, label = label), fontface = "bold", vjust = -1) +
+  scale_fill_gmri(reverse = T) +
+  scale_color_manual(values = c("black", gmri_cols("orange"))) +
+  scale_x_continuous(limits = c(1980, 2104),
+                     expand = expansion(add = c(0,0))) +
+  scale_y_continuous(labels = scales::label_number(suffix = deg_c)) +
+  theme_gmri() +
+  guides(
+    color = guide_legend(
+      order = 1, nrow = 2, title.position = "top", title.hjust = 0.5), 
+    fill = guide_legend(
+      order = 2, title.position = "top", title.hjust = 0)) +
+  labs(fill = "Range of Climate Model Uncertainty\n(5th-95th Percentiles)", 
+       color = "SST:", 
+       x = "", 
+       y = str_c("Average Annual Sea Surface Temperature"),
+       subtitle = "Northeast U.S.",
+       title = "Observed and Projected SST Under Ensemble Climate Scenario") +
+  theme(legend.box = "horizontal",
+        legend.box.background = element_rect(color = "black"),
+        legend.title = element_text(size = 14, family = "Avenir"),
+        legend.text = element_text(size = 12, family = "Avenir"),
+        legend.position = c(0.25, .81),
+        axis.title = element_text(size = 14, family = "Avenir"),
+        axis.text = element_text(size = 12, family = "Avenir"),
+        plot.title = element_text(size = 16, family = "Avenir"),
+        plot.subtitle = element_text(size = 14, family = "Avenir"),
+        strip.text = element_text(family = "Avenir"))
+
+
+
+# showtext::showtext_opts(dpi=300)
+# ggsave(
+#   plot = us_ssp85_sst_projections, 
+#   filename = here::here("R/static_dash_testing/dash_img/ssp5_sst_projection.png"),
+#   dpi = 300,
+#   bg = "white",
+#   width = 5.4,
+#   height = 2.5,
+#   units = "in", scale = 2)
+```
+
+
+
+
+```{r}
+
+
+# 1. Content Card from shiny modules:
+setwd(here::here("R/static_dash_testing")) # Only need this when working in the script
+
+# Build the card to contain everything
+  card(
+
+    # Card Header Contents
+    card_header(
+      class = "bg-dark",
+      "Understanding Community Climate Trends"),
+
+    # Card Body Content
+    card_body(
+
+      # Headline text above the plot -
+      #can be swapped with textoutput to be reactive
+      markdown("CMIP6 scenario projections for the Northeastern US:"),
+
+      # This is where the focal element goes:
+      card_body(
+        p("The chart below displays the projected change in sea surface
+          temperature for the Northeast US Continental Shelf Region, based
+          on the shared socioeconomic emissons pathway SSP5 8.5,
+          an ensemble climate scenario."),
+        p("These climate ensembles contain estimates of temperature
+          and salinity conditions at monthly intervals projected
+          out through 2100. Estimates are
+          based on decades of scientific observations in the region
+          and projected forward using physics-based oceanographic
+          models. These models are then fed data on expected GHG
+          emissions and climate sensitivity to those emissions
+          unique to each SSP scenario to see how the physical environment
+          responds under those assumptions."),
+          p("These estimates are then used to set reasonable expectations,
+            and test our understanding around the projected changes
+            to the region's environment. Differences between scenarios and
+          their uncertainties highlight how much/little change we
+          might anticipate dependent on choices made on emissions."),
+        p("By taking local conditions from these ensemble climate                  scenarios, and plugging them into species distribution models,
+          scientists can begin to understand the degree to which species
+          may respond to changes in the physical environment under
+          projected climate change."),
+
+        # Central Display - takes html:
+        card_image(file = "dash_img/ssp5_sst_projection.png")
+
+      ) # Close cardbody
+    ), # Close cardbody
+
+    # Footer information should be a module if dynamic
+    card_footer(
+      class = "fs-6",
+      "Projected distributions not based on stock recovery status
+      or any ecological interactions.")
+  ) # Close the card
+
+```
+
+
+## 2. Baseline Conditions
+
+```{r}
+# Make a Plot highlighting changes in the environment over time
+ref_timeseries <- references_combined %>%
+  rename(
+    `Sea Surface Salinity` = surf_sal, 
+    `Sea Surface Temperature` = surf_temp, 
+    `Sea Bottom Salinity` = bot_sal, 
+    `Sea Bottom Temperature` = bot_temp) %>% 
+  pivot_longer(
+    cols = c(
+      `Sea Surface Salinity`, `Sea Surface Temperature`, 
+      `Sea Bottom Salinity`, `Sea Bottom Temperature`),
+    names_to = "var",
+    values_to = "vals") %>% 
+  #  group_by(Date = year, var) %>% 
+  # summarise(vals = mean(vals),
+  #           .groups = "drop") %>% 
+    mutate(
+      var = factor(var, levels = c(
+        "Sea Surface Temperature", "Sea Surface Salinity",
+        "Sea Bottom Temperature", "Sea Bottom Salinity")),
+      Date = as.Date(str_c(year, month, "01", sep = "-")),
+      var_type = ifelse(str_detect(var, "Salinity"), "Salinity", "Temperature"),
+      var_col = ifelse(var_type == "Salinity", "#00736D", "#00608A"),
+      opacity = ifelse(str_detect(var, "Surface"), 1, 0.6)) %>% 
+  
+  group_by(var) %>%
+  do(
+    p = plot_ly(
+      ., 
+      x = ~Date, 
+      y = ~vals, 
+      legendgroup = ~var_type,
+      opacity = ~opacity,
+      type = "scatter", 
+      mode = "lines",
+      color = ~I(var_col),
+      name = ~var
+      )) %>%
+  subplot(nrows = 2, shareX = TRUE, shareY = FALSE) %>%
+  plotly::layout(
+    legend = list(
+      orientation = "h",   # show entries horizontally
+      xanchor = "center",  # use center of legend as anchor
+      yanchor = "bottom",
+      x = 0.5,
+      y = -0.3),             # put legend in center of x-axis
+    title = "Observed Environmental Variability of the Northeast Shelf")
+
+```
+
+
+```{r}
+#| label: env-conditions-card
+
+# 1. Content Card from shiny modules:
+
+# Build the card to contain everything
+  card(
+
+    # Card Header Contents
+    card_header(
+      #class = "bg-dark",
+      "Anchoring Comparisons Against Known Experiences"),
+
+    # Card Body Content
+    card_body(
+
+      # Headline text above the plot -
+      #can be swapped with textoutput to be reactive
+      markdown("Environmnetal Change History of the Northeastern US:"),
+
+      # This is where the focal element goes:
+      card_body(height = 800,
+        p("In the Northeast US the physical marine environment changes
+          at scales ranging from the hourly to decadal scales.
+          The marine environment is dynamic and inter-annual variation
+          is normal and expected regardless of climate change impacts."),
+        p("By taking several decades of data to use as a baseline,
+           scientists can measure the degree that each variable 
+           fluctuates naturally, and set benchmarks from which to compare against."),
+
+        # Central Display - takes html:
+        # # Plotly works here:
+        ref_timeseries
+
+      ) # Close cardbody
+    ), # Close cardbody
+
+    # Footer information should be a module if dynamic
+    card_footer(
+      class = "fs-6",
+      "Environmental conditions for the region are both directly observed and recreated via ocean reanalysis models.")
+  ) # Close the card
+
+```
+
+
+## 3. Species Preferences
+
+
+
+
+
+```{r}
+##### C. Species Preference Information  ####
+pref_data <- read_csv(
+  file = here::here("Coca_SDM_app_dev/app_ready_data/preference_curve_data.csv"),
+  col_types = list(
+    comname = col_character(),
+    variable = col_character(),
+    val_z = col_double(),
+    val_actual = col_double(),
+    fit_exp = col_double()))  %>% 
+ filter(tolower(comname) == tolower(input$in_species))
+
+
+
+#### D.  Environmental Conditions  ####
+env_condition_data <- read_csv(
+  file = here::here("Coca_SDM_app_dev/app_ready_data/projected_environmental_conditions.csv"),
+  col_types = cols(
+    scenario = col_character(),
+    region = col_character(),
+    variable = col_character(),
+    ref_period = col_character(),
+    temp_horizon = col_character(),
+    val = col_double())) %>% 
+  mutate(region = factor(region, levels = c("Scotian Shelf", "Gulf of Maine", "Georges Bank", "Mid-Atlantic Bight")))
+```
+
+
+
+
+
+
+```{r}
+# Set User selection options
+
+# This is a good crosstalk opportunity:
+# Pick the different temperature thresholds, have it change where the preferences align
+# Would also be cool to do two different species at once to show one leaving and one emerging
+
+
+
+
+#----- apply selections and filter -----
+# Build dataframe to plot
+
+
+# Build the dataset we need for the preference plot using inputs
+# a. conditions
+cond_x <- filter(
+  env_condition_data, 
+  scenario == str_remove(input$in_scenario, "CMIP6_"), 
+  #temp_horizon == input$in_horizon
+  temp_horizon %in% c("1C", "2C", "3C"))
+
+
+# b. preferences
+prefs_x <- pref_data %>% filter(comname == input$in_species) 
+
+# build out regions
+prefs_x <- bind_rows(list(
+  mutate(prefs_x, region = "Gulf of Maine"),
+  mutate(prefs_x, region = "Georges Bank"),
+  mutate(prefs_x, region = "Scotian Shelf"),
+  mutate(prefs_x, region = "Mid-Atlantic Bight"))) %>% 
+  mutate(region = factor(region, levels = c("Scotian Shelf", "Gulf of Maine", "Georges Bank", "Mid-Atlantic Bight")))
+
+# Join them:
+df <- left_join(prefs_x, cond_x)
+```
+
+
+
+
+```{r}
+#Build the figure:
+
+curve_dat <- df %>% filter(
+  region == "Gulf of Maine", 
+  variable != "Depth",
+  variable == "Surface Temperature")
+
+
+# Get scenario/horizon from the data so we don't need to feed so many inputs
+one_rec  <-  curve_dat %>% drop_na() %>%  slice(1)
+species  <- one_rec %>% pull(comname)
+
+
+# Inputs that change:
+scenario <- one_rec %>% pull(scenario)
+horizon  <- one_rec %>% pull(temp_horizon)
+period  <- one_rec %>% pull(ref_period)
+
+# Tidy text
+horizon <- str_c("+",str_sub(horizon, 1,-2), deg_c)
+scenario <- ifelse(scenario == "SSP1_26", "SSP1-2.6", "SSP5-8.5")
+
+# Make the plot
+curve_dat <- curve_dat %>% mutate(temp_horizon = str_c("+",str_sub(temp_horizon, 1,-2), deg_c))
+
+# Get a distinct combo for labels so they only plot once
+dlabs <- filter(curve_dat, variable == "Depth") %>% distinct(region, variable, val)
+vlabs <- filter(curve_dat, variable != "Depth") %>% distinct(region,variable, val, temp_horizon)
+
+
+
+# and plot
+pref_plot <- curve_dat %>% 
+    ggplot() +
+    # Mark the preference curves
+    geom_ribbon(aes(x = val_actual, ymin = 0, ymax = fit_exp), color = "transparent", alpha = 0.3, fill = gmri_cols("teal")) +
+    geom_line(aes(val_actual, fit_exp, group = comname), linewidth = 1) +
+    # Label the regional averages
+    geom_vline(
+      data = vlabs,
+      aes(xintercept = val, color = temp_horizon),
+      linewidth = 1.2, key_glyph = draw_key_rect) +
+    geom_label(
+      data = vlabs, 
+      aes(x = val, y = I(.35), color = temp_horizon, label = temp_horizon), 
+      key_glyph = draw_key_rect, label.size = 1,
+      label.padding = unit(0.6, "lines"), label.r = unit(0.5, "lines")) +
+    scale_color_manual(
+      #values = gmri_cols("orange"), 
+      values = RColorBrewer::brewer.pal(3, "Reds"), 
+      na.translate = F) +
+    facet_grid(
+      .~variable, 
+      scales = "free"#,
+      #labeller = labeller(
+        #region = label_wrap_gen(10),
+        #variable = label_wrap_gen(10))
+      ) +
+    scale_x_continuous(expand = expansion(add = c(-3,-3)), labels = label_number(suffix = deg_c)) +
+    scale_y_continuous(expand = expansion(mult = c(0,.4))) +
+    guides(
+      color = guide_legend(override.aes = list(
+        fill = RColorBrewer::brewer.pal(3, "Reds")))) +
+    theme_plot() +
+  theme(axis.text.x = element_text(angle = 0, family = "Avenir", hjust = 0.5, vjust = 0.1)) +
+    labs(
+      title = str_c(str_to_title(species), " Habitat Preferences with Projected Climate Conditions"), 
+      subtitle = str_c("Projected Climate from: ", scenario),
+      color = "Regional Conditions for a Future Climate of:   ",
+      x = "Value", 
+      y = "Biomass Density kg/km2")
+
+
+
+# # Save
+# showtext::showtext_opts(dpi=300)
+# ggsave(
+#   plot = pref_plot,
+#   filename = here::here("R/static_dash_testing/dash_img/haddock_pref_plot.png"),
+#   dpi = 300,
+#   bg = "white",
+#   width = 5.4,
+#   height = 2.5,
+#   units = "in", scale = 2)
+
+
+
+#-----------------
+# Try plotly
+
+# # Can we design it in plotly? in simple terms yea...
+# vline <- function(x = 0, color = gmri_cols("orange")) {
+#   list(
+#     type = "line",
+#     y0 = 0,
+#     y1 = 1,
+#     yref = "paper",
+#     x0 = x,
+#     x1 = x,
+#     line = list(color = color, dash = "dot", width = 2)
+#     
+#   )
+# }
+# 
+# # Not worth the effort today
+# plot_ly(
+#   data = filter(curve_dat, variable == "Surface Temperature"),
+#   x = ~val_actual) %>% 
+#   add_ribbons(
+#     ymin = 0,
+#     ymax = ~fit_exp,
+#     line = list(color = "black"),
+#     fillcolor = gmri_cols("teal"),
+#     opacity = 0.4,
+#     name = "Thermal Preference Curve") %>% 
+#   plotly::layout(
+#     shapes = list(vline(vlabs$val)))
+  
+
+
+```
+
+
+```{r}
+#| label: haddock-pref-card
+
+
+# 1. Content Card from shiny modules:
+
+# Build the card to contain everything
+  card(
+
+    # Card Header Contents
+    card_header(
+      #class = "bg-dark",
+      "Species Distribution Changes Based on Actual Thermal Preferences"),
+
+    # Card Body Content
+    card_body(
+
+      # Headline text above the plot -
+      #can be swapped with textoutput to be reactive
+      markdown("Gulf of Maine Haddock Preferences Facing Projected Climates:"),
+
+      # This is where the focal element goes:
+      card_body(
+        p("Haddock is an important fish species found in the cooler waters
+          off the Coast of New England. They serve an important role ecologically
+          and they support a regional fishery and commonly eaten as
+          fried fish fillets."),
+        p("By leveraging over 50 years of NOAA Survey data,
+          scientists can quantify the relationship between haddock abundance
+          and the temperatures where they are caught."),
+        p("When average temperatures from projected climates 
+          are overlayed, we can see whether conditions
+          are more/less favorable for a species and its
+          preferred habitat conditions."),
+
+        # Central Display - takes html:
+        # # Plotly works here:
+        card_image(file = "dash_img/haddock_pref_plot.png")
+
+      ) # Close cardbody
+    ), # Close cardbody
+
+    # Footer information should be a module if dynamic
+    card_footer(
+      class = "fs-6",
+      "Environmental conditions for the region are both directly observed and recreated via ocean reanalysis models.")
+  ) # Close the card
+
+```
+
+
+
+
+
+## Species Distribution Under Observed Conditions
+
+```{r}
+
+
+# Hexagonal grid simple feature geometry
+#hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
+hex_grid <- read_sf(here::here("Coca_SDM_app_dev/app_ready_data/hex_grid.geojson"))
+
+
+
+# Load the decadal milestone summaries
+horizon_projections <- read_csv(
+  here::here("Data/projections/Cmilestones_all_species_test.csv"),
+  col_types = cols(
+    var = col_character(),
+    ref_period = col_character(),
+    temp_horizon = col_character(),
+    species = col_character(),
+    scenario = col_character(),
+    pt_id = col_double(),
+    val = col_double()))  %>% 
+  left_join(name_fix, by = join_by(species)) %>% 
+  filter(str_detect(var, "_mu")) %>% 
+  filter(comname == input$in_species)
+
+```
+
+
+
+
+```{r}
+#| label: haddock-pref-card
+
+
+# 1. Content Card from shiny modules:
+
+# Build the card to contain everything
+  card(
+
+    # Card Header Contents
+    card_header(
+      #class = "bg-dark",
+      "Species Abundance in the Ocean Varies with Environmental Suitability"),
+
+    # Card Body Content
+    card_body(
+
+      # Headline text above the plot -
+      #can be swapped with textoutput to be reactive
+      markdown("Gulf of Maine Haddock Preferences Facing Projected Climates:"),
+
+      # This is where the focal element goes:
+      card_body(
+        p("Haddock is an important fish species found in the cooler waters
+          off the Coast of New England. They serve an important role ecologically
+          and they support a regional fishery and commonly eaten as
+          fried fish fillets."),
+        p("By leveraging over 50 years of NOAA Survey data,
+          scientists can quantify the relationship between haddock abundance
+          and the temperatures where they are caught."),
+        p("When average temperatures from projected climates 
+          are overlayed, we can see whether conditions
+          are more/less favorable for a species and its
+          preferred habitat conditions."),
+
+        # Central Display - takes html:
+        # # Plotly works here:
+        card_image(file = "dash_img/haddock_pref_plot.png")
+
+      ) # Close cardbody
+    ), # Close cardbody
+
+    # Footer information should be a module if dynamic
+    card_footer(
+      class = "fs-6",
+      "Environmental conditions for the region are both directly observed and recreated via ocean reanalysis models.")
+  ) # Close the card
+
+```
+
+
+
+
+
+### Projected Distribution
+
+```{r}
+
+# Load the decadal milestone summaries
+horizon_projections <- read_csv(
+  here::here("Data/projections/Cmilestones_all_species_test.csv"),
+  col_types = cols(
+    var = col_character(),
+    ref_period = col_character(),
+    temp_horizon = col_character(),
+    species = col_character(),
+    scenario = col_character(),
+    pt_id = col_double(),
+    val = col_double()))  %>% 
+  left_join(name_fix, by = join_by(species)) %>% 
+  filter(str_detect(var, "_mu"))  %>% 
+  filter(comname == input$in_species)
+```
+
+
+### Future Projections
+
+
+```{r}
+
+# Year key for text and plot labeling
+horizon_year_key_df <- tribble(
+  ~"scenario",    ~"horizon",  ~"xmin",  ~"xmax",
+  "CMIP6_SSP1_26",  "0C",      2010,     2019,
+  "CMIP6_SSP1_26",  "0.5C",    2048,     2052,
+  "CMIP6_SSP1_26",  "1C",      2048,     2052,
+  "CMIP6_SSP1_26",  "1.5C",    2048,     2052,
+  "CMIP6_SSP1_26",  "2C",      2048,     2052,
+  "CMIP6_SSP1_26",  "3C",      2048,     2052,
+  "CMIP6_SSP1_26",  "4C",      2048,     2052,
+  "CMIP6_SSP5_85",  "0C",      2010,     2019,
+  "CMIP6_SSP5_85",  "0.5C",    2034,     2038,
+  "CMIP6_SSP5_85",  "1C",      2042,     2045,
+  "CMIP6_SSP5_85",  "1.5C",    2054,     2058,
+  "CMIP6_SSP5_85",  "2C",      2064,     2068,
+  "CMIP6_SSP5_85",  "3C",      2077,     2081,
+  "CMIP6_SSP5_85",  "4C",      2095,     2099)
+
+
+# Data on mean projections for different regions
+density_timeseries <- read_csv(
+  file = here::here("Coca_SDM_app_dev/app_ready_data/projected_densities_timeseries.csv"),
+  col_types = list(
+    species = col_character(),
+    comname = col_character(),
+    scenario = col_character(),
+    region = readr::col_factor(levels = c("Scotian Shelf", "Gulf of Maine", "Georges Bank", "Mid-Atlantic Bight")), 
+    year = col_double(),
+    season = col_character(),
+    avg_dens = col_double()))  %>% 
+  filter(comname == input$in_species)
+
+
+
+
+
+```
+
+
+
+
+
+```{r}
+#| eval: false
+
+# Modify the following function to be a plotly figure, put it in a card
+
+timeseries_data <- density_timeseries
+
+
+#### Average Density Timelines  ####
+# ssp_projected_timeseries <- function(timeseries_data, reactive = F){
+#   
+  
+# Set the data
+in_data <- timeseries_data
+
+
+# Get scenario/horizon from the data so we don't need to feed so many inputs
+one_rec  <- in_data %>% slice(1)
+species  <- one_rec %>% pull(comname)
+scenario_choice <- one_rec %>% pull(scenario)
+horizon_choice  <- one_rec %>% pull(temp_horizon)
+
+# 2. Get the correct years for the temperature horizon:
+# Filter the limits out
+horizon_lims <- horizon_year_key_df %>% 
+  filter(
+    scenario == scenario_choice, 
+    horizon == horizon_choice) %>% 
+  mutate(mid_year = (xmin+xmax)/2,
+         horizon_lab = str_c("+", str_remove(horizon_choice, "C"), deg_c))
+
+# Clean up scenario text
+scenario_choice <- ifelse(scenario_choice == "CMIP6_SSP1_26", "SSP1-2.6", "SSP5-8.5")
+
+
+# 2. Make a dataframe for labeling the horizon's time frame
+region_heights <- in_data %>% 
+  # Get the max value in windows
+  filter(year %in% seq(horizon_lims$xmin, horizon_lims$xmax, 1)) %>% 
+  group_by(region) %>% 
+  summarise(panel_height = max(avg_dens)) %>% 
+  ungroup() %>% 
+  bind_cols(., horizon_lims)
+
+# Add some columns for alpha and size
+in_data <- in_data %>% 
+  mutate(
+    season_alpha = ifelse(season == "Annual Average", 1, 0.7),
+    season_lw    = ifelse(season == "Annual Average", 1.4, 0.8),
+    season       = factor(season, levels = c("Annual Average", "Spring", "Summer", "Fall")))
+
+
+# Assemble the plot
+ggplot() +
+  geom_rect(data = horizon_lims, aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = Inf), fill = "gray90") +
+  geom_text(data = region_heights, aes(x = mid_year, label = horizon_lab, y = panel_height), vjust = -1.4, size = 4, fontface = "bold") +
+  geom_line(data = filter(in_data, season != "Annual Average"), aes(year, avg_dens, group = season, linewidth = I(season_lw), alpha = I(season_alpha), color = season), key_glyph = "timeseries") +
+  geom_line(data = filter(in_data, season == "Annual Average"), aes(year, avg_dens, group = season, linewidth = I(season_lw), alpha = I(season_alpha), color = season), key_glyph = "timeseries") +
+  facet_wrap(~region, scale = "free_y") +
+  scale_color_gmri() +
+  scale_x_continuous(
+    #limits = c(2020, 2115),
+    limits = c(2020, 2105),
+    breaks = pretty_breaks(),
+    expand = expansion(add = c(0,0))) +
+  scale_y_continuous(
+    limits = c(0,NA), 
+    expand = expansion(mult = c(0, 0.25)),
+    breaks = pretty_breaks()) +
+  guides(color = guide_legend(title.vjust = 0.5, override.aes = list(fill = "white"))) +
+  theme_plot() +
+  labs(
+    y = "Average Biomass Density kg/km2", 
+    x = "Year", 
+    title = NULL,
+    # title = str_to_title(species),
+    color = str_c(str_to_title(species), " Seasonal Trajectory:"),
+    subtitle = str_c("Projected Biomass Change Under ", scenario_choice, " Ensemble Scenario"))
+  
+
+#}
+
+```
+
+
+
+
+
+### Community Angle?

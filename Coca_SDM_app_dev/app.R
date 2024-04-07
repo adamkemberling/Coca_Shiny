@@ -270,7 +270,6 @@ ui <- page_navbar(
     nav_panel(
       title = "2. Projected Future Distribution", 
       value = "projected_bio_tab",
-      
        
       layout_column_wrap(
         width = 1/2, 
@@ -361,17 +360,36 @@ server <- function(input, output, session) {
   # id matches the sidebar id where the inputs all are
   
   # Spatial density projections: species
-  species_dat    <- filterSpecies_server("sidebar_ID", species_projection_list = species_projection_list)
+  species_dat    <- filterSpecies_server(
+    "sidebar_ID", 
+    species_projection_list = species_projection_list)
+  
   # Projected densities: baseline
-  baseline_dat   <- filterBaseline_server("sidebar_ID", df = species_dat)
+  baseline_dat   <- filterBaseline_server(
+    "sidebar_ID", 
+    df = species_dat)
+  
   # Projected densities: projections
-  projection_dat <- filterProjection_server("sidebar_ID", df = species_dat)
+  projection_dat <- filterProjection_server(
+    "sidebar_ID", 
+    df = species_dat)
+  
   # Projected_densities: changes
-  difference_dat <- getDifference_server("sidebar_ID", base_df = baseline_dat, proj_df = projection_dat)
+  difference_dat <- getDifference_server(
+    "sidebar_ID", 
+    base_df = baseline_dat, 
+    proj_df = projection_dat)
+  
   # Projected density timeseries
-  timeseries_dat <- getTimeseries_server("sidebar_ID", density_timeseries = density_timeseries)
+  timeseries_dat <- getTimeseries_server(
+    "sidebar_ID", 
+    density_timeseries = density_timeseries)
+  
   # Species preference curve and environmental states
-  preferences_dat <- filterPreferences_server("sidebar_ID", pref_data = pref_data, env_condition_data = env_condition_data)
+  preferences_dat <- filterPreferences_server(
+    "sidebar_ID", 
+    pref_data = pref_data, 
+    env_condition_data = env_condition_data)
   
   
   ####  Reactive UI  ####

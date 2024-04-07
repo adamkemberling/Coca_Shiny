@@ -102,6 +102,7 @@ num_intersects <- map_dfr(fprints,
         .id = "Community") %>% 
   arrange(`Stat-Area Intersections`)
 
+
 num_intersects %>% 
   gt::gt()
 
@@ -173,20 +174,20 @@ overlap_maps <- map(fprints, map_overlaps)
 
 # Look at them in order of number of intersects
 overlap_maps$`STONINGTON, ME`
-overlap_maps$`SCITUATE, MA`
-overlap_maps$`PORTSMOUTH, NH`
-overlap_maps$`NEW LONDON, CT`
-overlap_maps$`CHATHAM, MA`
+# overlap_maps$`SCITUATE, MA`
+# overlap_maps$`PORTSMOUTH, NH`
+# overlap_maps$`NEW LONDON, CT`
+# overlap_maps$`CHATHAM, MA`
 overlap_maps$`PORTLAND, ME`
-overlap_maps$`STONINGTON, CT`
-overlap_maps$`BOSTON, MA`
-overlap_maps$`POINT PLEASANT, NJ`
-overlap_maps$`MONTAUK, NY`
-overlap_maps$`GLOUCESTER, MA`
-overlap_maps$`NEWPORT NEWS, VA`
-overlap_maps$`CAPE MAY, NJ`
-overlap_maps$`POINT JUDITH, RI`
-overlap_maps$`NEW BEDFORD, MA`
+# overlap_maps$`STONINGTON, CT`
+# overlap_maps$`BOSTON, MA`
+# overlap_maps$`POINT PLEASANT, NJ`
+# overlap_maps$`MONTAUK, NY`
+# overlap_maps$`GLOUCESTER, MA`
+# overlap_maps$`NEWPORT NEWS, VA`
+# overlap_maps$`CAPE MAY, NJ`
+# overlap_maps$`POINT JUDITH, RI`
+# overlap_maps$`NEW BEDFORD, MA`
 
 
 
@@ -294,13 +295,13 @@ rule_based_overmaps$`CHATHAM, MA`
 rule_based_overmaps$`PORTLAND, ME`
 rule_based_overmaps$`STONINGTON, CT`
 rule_based_overmaps$`BOSTON, MA`
-rule_based_overmaps$`POINT PLEASANT, NJ`
-rule_based_overmaps$`MONTAUK, NY`
-rule_based_overmaps$`GLOUCESTER, MA`
-rule_based_overmaps$`NEWPORT NEWS, VA`
-rule_based_overmaps$`CAPE MAY, NJ`
-rule_based_overmaps$`POINT JUDITH, RI`
-rule_based_overmaps$`NEW BEDFORD, MA`
+# rule_based_overmaps$`POINT PLEASANT, NJ`
+# rule_based_overmaps$`MONTAUK, NY`
+# rule_based_overmaps$`GLOUCESTER, MA`
+# rule_based_overmaps$`NEWPORT NEWS, VA`
+# rule_based_overmaps$`CAPE MAY, NJ`
+# rule_based_overmaps$`POINT JUDITH, RI`
+# rule_based_overmaps$`NEW BEDFORD, MA`
 
 
 

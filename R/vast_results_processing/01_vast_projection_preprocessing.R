@@ -72,7 +72,7 @@ land_sf <- ne_states(
 
 
 ####____________####
-####____________####
+
 ####  Projections Folder  ####
 
 
@@ -84,6 +84,12 @@ projection_res_path <- paste0(project_box_path, "projections/")
 
 
 
+
+
+
+
+
+####____________####
 #### 1. Load Projection Datasets  ####
 
 
@@ -119,6 +125,7 @@ proj_data <- map(proj_files, read_rds_func)
 
 # Check one of these objects to see its structure
 names(proj_data$Butterfish_full_CMIP6_SSP1_26_mean)
+names(proj_data$Plaice_full_CMIP6_SSP1_26_mean)
 
 
 
@@ -364,6 +371,10 @@ rolling_dens <- map(rolling_dens, ~left_join(.x, unique_pts, by = join_by(Lat, L
 
 
 
+
+
+
+
 #### 5. Saving Rolling Average Densities  ####
 
 # Right now we have density estimates for all the ensemble means & (10th, 90th percentiles):
@@ -373,53 +384,6 @@ all_density_results <- rolling_dens %>%
 
 # Save here, and split the subroutines off into their own scripts
 write_csv(all_density_results, here::here("Data/projections/VAST_all_densities_all_species.csv"))
-
-
-
-
-
-
-
-
-##### Validate all Data is within Study Area  ####
-
-# We've given all the locations an ID that can be matched to a polygon geometry
-# Doing so lets us do all the processing steps as a regular dataframe, 
-# then add the geometry on at the end before plotting
-
-
-# Study area outline shapefile
-domain_use <- st_read(str_c(cs_path("mills", "Projects/sdm_workflow/data 2/supporting/region_shapefile"), "full_survey_region.shp"))
-ggplot() + 
-  geom_sf(data = domain_use) + 
-  geom_point(data = unique_pts, aes(Lon, Lat)) +
-  ggtitle("Study Area") + theme_bw()
-
-
-# Invalid geometries eh... Have to turn off S2
-st_make_valid(domain_use)
-
-# turn off s2
-sf_use_s2(FALSE)
-
-# Unique locations as sf
-dens_sf_test <- unique_pts %>% st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F) 
-
-# Points inside study area:
-unique_pts_within <- st_join(x = dens_sf_test, y = st_make_valid(domain_use))
-
-# st_join is Wayyyy faster than st_within for checking if they fall in an area
-unique_pts_within %>% 
-  ggplot() +
-  geom_sf(data = domain_use) +
-  geom_sf()
-
-
-# All the points are already within the area...
-
-
-
-
 
 
 
@@ -474,6 +438,48 @@ densities_baseline_preroll <- density_estimates %>%
 
 # Save the baseline average densities
 write_csv(densities_baseline_preroll, here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+
+
+
+
+
+
+##### Validate all Data is within Study Area  ####
+
+# We've given all the locations an ID that can be matched to a polygon geometry
+# Doing so lets us do all the processing steps as a regular dataframe, 
+# then add the geometry on at the end before plotting
+
+
+# Study area outline shapefile
+domain_use <- st_read(str_c(cs_path("mills", "Projects/sdm_workflow/data 2/supporting/region_shapefile"), "full_survey_region.shp"))
+ggplot() + 
+  geom_sf(data = domain_use) + 
+  geom_point(data = unique_pts, aes(Lon, Lat)) +
+  ggtitle("Study Area") + theme_bw()
+
+
+# Invalid geometries eh... Have to turn off S2
+st_make_valid(domain_use)
+
+# turn off s2
+sf_use_s2(FALSE)
+
+# Unique locations as sf
+dens_sf_test <- unique_pts %>% st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F) 
+
+# Points inside study area:
+unique_pts_within <- st_join(x = dens_sf_test, y = st_make_valid(domain_use))
+
+# st_join is Wayyyy faster than st_within for checking if they fall in an area
+unique_pts_within %>% 
+  ggplot() +
+  geom_sf(data = domain_use) +
+  geom_sf()
+
+
+# All the points are already within the area...
+
 
 
 
