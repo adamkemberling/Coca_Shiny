@@ -247,7 +247,10 @@ ssp_proj_map <- function(
   
   # EPU labels
   if(add_labels){projection_map <- projection_map + 
-    geom_label(data = labels_df, aes(x, y, label = label), family = "Avenir", size = 5)
+    geom_label(
+      data = labels_df, 
+      aes(x, y, label = label), 
+      family = "Avenir", size = 5)
   }
   
   # Hague line
@@ -374,7 +377,8 @@ ssp_difference_map <- function(dist_df, reactive = F){  # Color scale limit
     scale_color_manual(values = c(
       "Range Gained" = "#008080",
       "Range Lost" = "#CA562C"), 
-      na.value = "transparent") +
+      na.value = "transparent",
+      na.translate = F) +
     scale_fill_carto_c(
       palette = "Geyser", 
       labels = scales::comma_format(accuracy = 1, suffix = " kg"),
