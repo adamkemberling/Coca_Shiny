@@ -257,7 +257,7 @@ ssp_proj_map <- function(
   if(add_labels == F){projection_map <- projection_map + 
     geom_text(
       data = data.frame(x = 880000, y = 4425000, label = "Hague\nLine"), 
-      aes(x, y, label = label), size = 4) +
+      aes(x, y, label = label), size = 4, family = "Avenir") +
     geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 3)}
   
   # Set CRS
@@ -279,6 +279,7 @@ ssp_proj_map <- function(
 get_difference <- function(base_dat, proj_dat){
   base_dat <- st_drop_geometry(base_dat) %>% select(-c(ref_period, temp_horizon, var))
   proj_dat <- st_drop_geometry(proj_dat) %>% select(-c(var, ref_period)) %>% rename(proj_val = val)
+  # Join and get differences
   diff_dat <- left_join(base_dat, proj_dat) %>% 
     mutate(val_diff = proj_val - val)
   
@@ -306,7 +307,9 @@ get_difference <- function(base_dat, proj_dat){
   
   
   # Join the polygons back in
-  diff_dat <- diff_dat %>% left_join(hex_grid, by = join_by(Lon, Lat, pt_id)) %>% st_as_sf()
+  diff_dat <- diff_dat %>% 
+    left_join(hex_grid, by = join_by(Lon, Lat, pt_id)) %>% 
+    st_as_sf()
   return(diff_dat)
 }
 
@@ -314,7 +317,7 @@ get_difference <- function(base_dat, proj_dat){
 
 
 # Function to plot the differences
-ssp_difference_map <- function(dist_df, reactive = F){  # Color scale limit
+ssp_difference_map <- function(dist_df, reactive = F, range_shift = T){  # Color scale limit
   
   
   # Set the data
@@ -361,54 +364,76 @@ ssp_difference_map <- function(dist_df, reactive = F){  # Color scale limit
   
   
   # Make the map - Log Differences
-  diff_m <- ggplot() +
-    geom_sf(
-      data = density_sf, 
-      aes(
-        fill = val_diff, 
-        alpha = I(minor_change),
-        color = range_shift),
-      linewidth = 0.8) +
-    geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
-    geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 3) +
-    geom_text(
-      data = data.frame(x = 880000, y = 4425000, label = "Hague\nLine"), 
-      aes(x, y, label = label), size = 4) +
-    scale_color_manual(values = c(
-      "Range Gained" = "#008080",
-      "Range Lost" = "#CA562C"), 
-      na.value = "transparent",
-      na.translate = F) +
-    scale_fill_carto_c(
-      palette = "Geyser", 
-      labels = scales::comma_format(accuracy = 1, suffix = " kg"),
-      limits = col_lims, 
-      oob = oob_squish, 
-      breaks = pretty_breaks(n = 5),
-      na.value = "transparent",
-      direction = -1) +
-    coord_sf(
-      xlim = c(-182500, 1550000), 
-      ylim = c(3875000, 5370000) , 
-      expand = F, crs = 32619) +
-    labs(
-      title = str_c(str_to_title(species), " | Biomass Change at +", horizon_choice),
-      subtitle = str_c("Estimated Years: ", horizon_years),
-      color = "Range Shifts:") +
-    theme_map() +
-    guides(
-      fill = guide_colorbar(
-        order = 1,
-        title = "Biomass Density\nChange (kg/km2)",
-        title.position = "top",
-        title.hjust = 0,
-        barheight = unit(3, "in"),
-        barwidth = unit(1, "cm"),
-        direction = "vertical",
-        frame.colour = "black",
-        ticks.colour = "black"),
-      color = guide_legend(order = 2, override.aes = (list(fill = "transparent", linetype = 1)))) +
-    theme(legend.position = "right")
+  diff_m <- ggplot() 
+  
+  
+  # Range shift toggle
+  if(range_shift){
+    diff_m <- diff_m +
+      geom_sf(
+        data = density_sf, 
+        aes(
+          fill = val_diff, 
+          alpha = I(minor_change),
+          color = range_shift),
+        linewidth = 0.8) +
+      scale_color_manual(values = c(
+        "Range Gained" = "#008080",
+        "Range Lost" = "#CA562C"), 
+        na.value = "transparent",
+        na.translate = F) +
+      guides(color = guide_legend(order = 2, override.aes = (list(fill = "transparent", linetype = 1)))) +
+      labs(color = "Range Shifts:")
+    
+    
+  } else {
+    # Behavior with no boundary color indication
+    diff_m <- diff_m +
+      geom_sf(
+        data = density_sf, 
+        aes(
+          fill = val_diff, 
+          alpha = I(minor_change)),
+          color = "transparent",
+        linewidth = 0.8) 
+    }
+
+    # Rest of map is unchanged
+    diff_m <- diff_m +
+      geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+      geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 3) +
+      geom_text(
+        data = data.frame(x = 880000, y = 4425000, label = "Hague\nLine"), 
+        aes(x, y, label = label), size = 4, family = "Avenir") +
+      scale_fill_carto_c(
+        palette = "Geyser", 
+        labels = scales::comma_format(accuracy = 1, suffix = " kg"),
+        limits = col_lims, 
+        oob = oob_squish, 
+        breaks = pretty_breaks(n = 5),
+        na.value = "transparent",
+        direction = -1) +
+      coord_sf(
+        xlim = c(-182500, 1550000), 
+        ylim = c(3875000, 5370000) , 
+        expand = F, crs = 32619) +
+      theme_map() +
+      guides(
+        fill = guide_colorbar(
+          order = 1,
+          title = "Biomass Density\nChange (kg/km2)",
+          title.position = "top",
+          title.hjust = 0,
+          title.vjust = 3,
+          barheight = unit(3, "in"),
+          barwidth = unit(1, "cm"),
+          direction = "vertical",
+          frame.colour = "black",
+          ticks.colour = "black")) +
+      theme(legend.position = "right")  +
+      labs(
+        title = str_c(str_to_title(species), " | Biomass Change at +", horizon_choice),
+        subtitle = str_c("Estimated Years: ", horizon_years))
   
   # Review
   diff_m

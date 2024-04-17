@@ -804,7 +804,7 @@ haddock_maseline_map <- ssp_proj_map(
 
 
 
-## 5. Projected Distribution Change in a +1C Climate
+## 5. Projected Distribution: Change in a +1C Climate
 
 ```{r}
 
@@ -831,7 +831,9 @@ projected_df <- horizon_projections %>%
   left_join(hex_grid, by = join_by(pt_id))
 
 # Get the difference
-diff_df <- get_difference(base_dat = base_df, proj_dat = projected_df)
+diff_df <- get_difference(
+  base_dat = st_drop_geometry(base_df), 
+  proj_dat = st_drop_geometry(projected_df))
 
 
 # Make a map of the baseline distribution
@@ -1188,6 +1190,107 @@ ssp_projected_timeseries(timeseries_data = timeseries_data, reactive = F)
 #           scientists can begin to understand the degree to which species
 #           may respond to changes in the physical environment under
 #           projected climate change.")
+```
+
+
+### US Area Maps
+
+For COCA we only really need the US area, so maybe clip to that area:
+
+```{r}
+#| eval: false
+
+# Load the trawl survey area
+us_area <- read_sf(str_c(cs_path("res", "Shapefiles/BottomTrawlStrata/"), "BTS_Strata.shp"))  %>% 
+  janitor::clean_names() %>% 
+  filter(strata >= 01010 ,
+         strata <= 01760,
+         strata != 1310,
+         strata != 1320,
+         strata != 1330,
+         strata != 1350,
+         strata != 1410,
+         strata != 1420,
+         strata != 1490) %>% 
+  st_union() %>% 
+  st_as_sf() %>% 
+  mutate(region = "US Survey Zone")
+
+# What coordinates/hexagons touch?
+hex_us <- hex_grid %>% 
+  st_join(
+    y = st_transform(us_area, st_crs(hex_grid)),
+    join = st_intersects) %>% 
+  drop_na(region) %>% 
+  st_drop_geometry()
+
+
+
+# Use them to filter the data going into the plotting functions:
+# easy
+```
+
+```{r}
+#| label: observed-baseline-us
+#| eval: false
+
+
+# Make a map of the baseline distribution
+haddock_baseline_map_us <- ssp_proj_map(
+  dist_df = filter(base_df, pt_id %in% hex_us$pt_id),
+  reactive = F, 
+  add_labels = F) + 
+  coord_sf(
+    xlim = c(-200000, 1050000), 
+    ylim = c(3875000, 5200000) , 
+    expand = F, crs = 32619) +
+  labs(title = "Haddock Average Biomass Density (2010-2019)")
+
+
+
+# 
+# # # # Save
+# # showtext::showtext_opts(dpi=300)
+# ggsave(
+#   plot = haddock_baseline_map_us,
+#   filename = here::here("R/static_dash_testing/dash_img/haddock_baseline_plot_us.png"),
+#   dpi = 300,
+#   bg = "white",
+#   width = 4,
+#   height = 4,
+#   units = "in", scale = 2)
+
+```
+
+
+```{r}
+#| label: observed-diff-us
+#| eval: false
+
+# Make a map of the baseline distribution
+#ssp_proj_map(dist_df = projected_df, reactive = F, add_labels = F)
+haddock_change_map_us <- ssp_difference_map(
+  dist_df = filter(diff_df, pt_id %in% hex_us$pt_id),
+  reactive = F,
+  range_shift = F) + 
+  coord_sf(
+    xlim = c(-200000, 1050000), 
+    ylim = c(3875000, 5200000) , 
+    expand = F, crs = 32619) +
+  labs(title = str_c("Change in Haddock Biomass Density at +1", deg_c))
+
+
+# showtext::showtext_opts(dpi=300)
+# ggsave(
+#   plot = haddock_change_map_us,
+#   filename = here::here("R/static_dash_testing/dash_img/haddock_change_plot_us.png"),
+#   dpi = 300,
+#   bg = "white",
+#   width = 4,
+#   height = 4,
+#   units = "in",
+#   scale = 2)
+
 ```
 
 
