@@ -57,6 +57,40 @@ fprints <- imap(fprints, ~st_as_sf(.x) %>%
 
 
 
+### Plotting 1: with land:
+library(rnaturalearth)
+new_england <- ne_states(returnclass = "sf")
+
+# Path to the directory containing the font file (replace with your actual path)
+library(showtext)
+font_dir <- paste0(system.file("stylesheets", package = "gmRi"), "/GMRI_fonts/Avenir/")
+
+# Register the font
+font_add(
+  family = "Avenir",
+  file.path(font_dir, "LTe50342.ttf"),
+  bold = file.path(font_dir, "LTe50340.ttf"),
+  italic = file.path(font_dir, "LTe50343.ttf"),
+  bolditalic = file.path(font_dir, "LTe50347.ttf"))
+
+# Load the font
+showtext::showtext_auto()
+
+ggplot() +
+  geom_sf(data = fprints$`NEW BEDFORD, MA` %>% 
+            fill_holes(threshold = units::set_units(100000, km^2)), 
+          color = "orange", 
+          fill = "orange", alpha = 0.2, 
+          linewidth = 1) +
+  geom_sf(data = new_england) +
+  coord_sf(xlim = c(-76, -66.5), ylim = c(37.25, 44)) +
+  theme_bw() +
+  map_theme(text = element_text(family = "Avenir", size = 30)) + 
+  labs(title = "New Bedford, MA",
+       subtitle = "Reported fisheries activity footprint")
+
+
+
 ####______________________####
 #### 1. Checking Fottprint & Statzone Overlays  ####
 # So for this check we just want to return the stat areas that intersect, we don't need to
@@ -187,7 +221,7 @@ overlap_maps$`PORTLAND, ME`
 # overlap_maps$`NEWPORT NEWS, VA`
 # overlap_maps$`CAPE MAY, NJ`
 # overlap_maps$`POINT JUDITH, RI`
-# overlap_maps$`NEW BEDFORD, MA`
+overlap_maps$`NEW BEDFORD, MA`
 
 
 
