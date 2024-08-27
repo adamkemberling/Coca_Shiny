@@ -148,6 +148,7 @@ hex_grid <- read_sf(here::here("Coca_SDM_app_dev/app_ready_data/hex_grid.geojson
 
 
 # Load the decadal milestone summaries
+# prepared in: vast_results_processing/02_vast_horizon_summaries.R
 horizon_projections <- read_csv(
   here::here("Data/projections/Cmilestones_all_species_test.csv"),
   col_types = cols(
@@ -170,6 +171,7 @@ species_projection_list <- horizon_projections %>%
 
 
 ##### B.  Timeseries Datasets  ####
+# prepared in: app_data_prep/01_projected_timeseries_prep.R
 density_timeseries <- read_csv(
   file = here::here("Coca_SDM_app_dev/app_ready_data/projected_densities_timeseries.csv"),
   col_types = list(
@@ -184,6 +186,7 @@ density_timeseries <- read_csv(
 
 
 ##### C. Species Preference Information  ####
+# prepared in: app_data_prep/03_preference_curve_data_prep.R
 pref_data <- read_csv(
   file = here::here("Coca_SDM_app_dev/app_ready_data/preference_curve_data.csv"),
   col_types = list(
@@ -197,6 +200,7 @@ pref_data <- read_csv(
 
 
 #### D.  Environmental Conditions  ####
+# prepared in: app_data_prep/03_preference_curve_data_prep.R
 env_condition_data <- read_csv(
   file = here::here("Coca_SDM_app_dev/app_ready_data/projected_environmental_conditions.csv"),
   col_types = cols(

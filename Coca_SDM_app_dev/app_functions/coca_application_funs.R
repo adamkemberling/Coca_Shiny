@@ -557,7 +557,9 @@ plot_preference_curves <- function(pref_dat, reactive = F){
   curve_dat %>% 
     ggplot() +
     # Mark the preference curves
-    geom_ribbon(aes(x = val_actual, ymin = 0, ymax = fit_exp), color = "transparent", alpha = 0.3, fill = gmri_cols("teal")) +
+    geom_ribbon(
+      aes(x = val_actual, ymin = 0, ymax = fit_exp), 
+      color = "transparent", alpha = 0.3, fill = gmri_cols("blue economy teal")) +
     geom_line(aes(val_actual, fit_exp, group = comname), linewidth = 1) +
     # Label the regional averages
     geom_vline(
