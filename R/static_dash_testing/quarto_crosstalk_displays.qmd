@@ -437,7 +437,7 @@ us_ssp85_sst_projections <- ggplot() +
     data = label_df, size =5,
     aes(x,y, label = label), fontface = "bold", vjust = -1) +
   scale_fill_gmri(reverse = T) +
-  scale_color_manual(values = c("black", gmri_cols("orange"))) +
+  scale_color_manual(values = c("black", gmri_cols("lv orange"))) +
   scale_x_continuous(limits = c(1980, 2104),
                      expand = expansion(add = c(0,0))) +
   scale_y_continuous(labels = scales::label_number(suffix = deg_c)) +

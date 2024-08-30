@@ -537,7 +537,7 @@ plot_preference_curves <- function(pref_dat, reactive = F){
   species  <- one_rec %>% pull(comname)
   scenario <- one_rec %>% pull(scenario)
   horizon  <- one_rec %>% pull(temp_horizon)
-  period  <- one_rec %>% pull(ref_period)
+  period   <- one_rec %>% pull(ref_period)
   
   # Tidy text
   horizon <- str_c("+",str_sub(horizon, 1,-2), deg_c)
@@ -549,8 +549,10 @@ plot_preference_curves <- function(pref_dat, reactive = F){
   curve_dat <- curve_dat %>% mutate(temp_horizon = str_c("+",str_sub(temp_horizon, 1,-2), deg_c)) 
   
   # Get a distinct combo for labels so they only plot once
-  dlabs <- filter(curve_dat, variable == "Depth") %>% distinct(region, variable, val)
-  vlabs <- filter(curve_dat, variable != "Depth") %>% distinct(region,variable, val, temp_horizon)
+  dlabs <- filter(curve_dat, variable == "Depth") %>% 
+    distinct(region, variable, val)
+  vlabs <- filter(curve_dat, variable != "Depth") %>% 
+    distinct(region, variable, val, temp_horizon)
   
   
   #Build the figure:
@@ -580,7 +582,7 @@ plot_preference_curves <- function(pref_dat, reactive = F){
       aes(x = val, y = I(.4), color = temp_horizon, label = round(val)), 
       key_glyph = draw_key_rect, label.size = 1,
       label.padding = unit(0.7, "lines"), label.r = unit(0.5, "lines")) +
-    scale_color_manual(values = gmri_cols("orange"), na.translate = F) +
+    scale_color_manual(values = gmri_cols("lv orange"), na.translate = F) +
     facet_grid(
       region~variable, 
       scales = "free",
@@ -589,7 +591,7 @@ plot_preference_curves <- function(pref_dat, reactive = F){
         variable = label_wrap_gen(10))) +
     scale_x_continuous(expand = expansion(add = c(0,0))) +
     scale_y_continuous(expand = expansion(mult = c(0,.4))) +
-    guides(color = guide_legend(override.aes = list(fill = gmri_cols("orange")))) +
+    guides(color = guide_legend(override.aes = list(fill = gmri_cols("lv orange")))) +
     theme_plot() +
     labs(
       title = "Habitat Preferences with Projected Climate Conditions", 
