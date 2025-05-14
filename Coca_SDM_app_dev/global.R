@@ -1,6 +1,7 @@
 # Globally Available Resources
 
 ####  Packages  ####
+{
 library(scales)
 library(here)
 library(shiny)
@@ -14,24 +15,22 @@ library(showtext)
 library(tidyverse)
 library(ggtext)
 library(geomtextpath)
+}
 
-
+#### IMPORTANT  ####
 # Delete before publishing:
 library(gmRi)
 
 
-# conflicted::conflict_prefer("filter", "dplyr")
-# conflicted::conflict_prefer("col_factor", "readr")
-
 #### Support Functions:  ####
 
 # Support Code and Modules
-source(here::here("Coca_SDM_app_dev/modules/mod-sidebar-inputs.R")) # Data filtering
-source(here::here("Coca_SDM_app_dev/app_functions/coca_application_funs.R")) # Plotting functions
-source(here::here("Coca_SDM_app_dev/modules/mod-distribution-map-card.R")) # Baseline and horizon maps
-source(here::here("Coca_SDM_app_dev/modules/mod-difference-map-card.R")) # Change in Biomass Map
+source(here::here("Coca_SDM_app_dev/modules/mod-sidebar-inputs.R"))            # Data filtering
+source(here::here("Coca_SDM_app_dev/app_functions/coca_application_funs.R"))   # Plotting functions
+source(here::here("Coca_SDM_app_dev/modules/mod-distribution-map-card.R"))     # Baseline and horizon maps
+source(here::here("Coca_SDM_app_dev/modules/mod-difference-map-card.R"))       # Change in Biomass Map
 source(here::here("Coca_SDM_app_dev/modules/mod-projected-timeseries-card.R")) # Projected Density Timeseries
-source(here::here("Coca_SDM_app_dev/modules/mod-preference-curve-card.R")) # Specied Preference Curve
+source(here::here("Coca_SDM_app_dev/modules/mod-preference-curve-card.R"))     # Specied Preference Curve
 
 
 # Path to the directory containing the font file (replace with your actual path)
@@ -59,7 +58,7 @@ custom_theme <- bs_theme(
   info             = "#ABB400", 
   warning          = "#EACA00", 
   danger           = "#EA4F12", 
-  font_scale       = 1.25, 
+  font_scale       = 1.1, 
   `enable-shadows` = TRUE, 
   spacer           = "1.25rem"
   
@@ -133,7 +132,7 @@ horizon_year_key_df <- tribble(
 
 # Hexagonal grid simple feature geometry
 #hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
-hex_grid <- read_sf(here::here("Coca_SDM_app_dev/app_ready_data/hex_grid.geojson"))
+hex_grid <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hex_grid.geojson"))
 
 
 ####_________________________####
@@ -150,7 +149,8 @@ hex_grid <- read_sf(here::here("Coca_SDM_app_dev/app_ready_data/hex_grid.geojson
 # Load the decadal milestone summaries
 # prepared in: vast_results_processing/02_vast_horizon_summaries.R
 horizon_projections <- read_csv(
-  here::here("Data/projections/Cmilestones_all_species_test.csv"),
+  # here::here("Data/projections/Cmilestones_all_species_test.csv"),
+  here::here("COCA_SDM_app_dev/dev", "projections/Cmilestones_all_species_test.csv"),
   col_types = cols(
     var = col_character(),
     ref_period = col_character(),
@@ -164,15 +164,18 @@ horizon_projections <- read_csv(
 
 
 
+
 # Split the Projection data by species for reactive selection
 species_projection_list <- horizon_projections %>% 
   split(.$comname)
 
 
 
+
 ##### B.  Timeseries Datasets  ####
 # prepared in: app_data_prep/01_projected_timeseries_prep.R
 density_timeseries <- read_csv(
+  # file = here::here("Coca_SDM_app_dev/app_ready_data/projected_densities_timeseries.csv"),
   file = here::here("Coca_SDM_app_dev/app_ready_data/projected_densities_timeseries.csv"),
   col_types = list(
     species = col_character(),
@@ -183,6 +186,8 @@ density_timeseries <- read_csv(
     season = col_character(),
     avg_dens = col_double())) %>% 
   split(.$comname)
+
+
 
 
 ##### C. Species Preference Information  ####
@@ -199,8 +204,9 @@ pref_data <- read_csv(
 
 
 
-#### D.  Environmental Conditions  ####
 # prepared in: app_data_prep/03_preference_curve_data_prep.R
+
+##### D.  Environmental Conditions  ####
 env_condition_data <- read_csv(
   file = here::here("Coca_SDM_app_dev/app_ready_data/projected_environmental_conditions.csv"),
   col_types = cols(
@@ -215,7 +221,7 @@ env_condition_data <- read_csv(
 
 
 
-#### User Selection "_opts"  ####
+#### User Selection Options: "_opts"  ####
 
 
 # Names of species

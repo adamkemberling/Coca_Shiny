@@ -9,6 +9,7 @@ sideUI <- function(id) {
   ns <- NS(id)
   
   tagList(
+    
     # 1. Select Species
     selectInput(
       inputId = ns("in_species"),
@@ -35,8 +36,24 @@ sideUI <- function(id) {
 
 
 
+
+#### Testing Returning Species for Text  ####
+
+
+# Returns the species selection for reactive text
+updateSpecies <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # Return a reactive version of the selected input
+    return(reactive({ input$in_species }))
+  })
+}
+
+
+
+
 # Can we just update the horizons so we don't get drill-down errors?
-# maybe i need a module?
+# Updates the selection options based on the SSP scenarios
+# SSP1-2.6 does not cross 1C
 updateHorizons <- function(input, output, session){
       
       # Get dataset based on user inputs:
@@ -56,6 +73,13 @@ updateHorizons <- function(input, output, session){
       }) # End Observe
       
 }
+
+
+
+
+
+
+
 
 
 

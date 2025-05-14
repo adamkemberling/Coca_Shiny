@@ -1,6 +1,11 @@
 # Libraries
 library(here)
 
+
+
+
+####  Load Global Assets  ####
+
 # Load Global Assets: Shared/Available across all sessions
 # Contains: Support Code and Modules
 source(here("Coca_SDM_app_dev/global.R"))
@@ -10,16 +15,23 @@ source(here("Coca_SDM_app_dev/global.R"))
 
 
 
+
+
+
 ####____________________####
-#### Global Environment and Testing Space  ####
+#### Testing Space + Defaults ####
+
+
 
 # These match the two user selection controls on the App
-species_choice <- "haddock"
+# species_choice <- "haddock"
+species_choice <- species_opts[["Black Sea Bass"]]
 scenario_choice <- "CMIP6_SSP5_85"
 horizon_choice <-  "4C"
 
 # Filter
-test_species <- horizon_projections %>% filter(comname == species_choice) 
+test_species <- horizon_projections %>% 
+  filter(comname == species_choice) 
 
 # At this point we can join back in the lat/lon or the grid
 test_species   <- left_join(test_species, hex_grid, by = join_by(pt_id))
@@ -33,15 +45,23 @@ test_species   <- left_join(test_species, hex_grid, by = join_by(pt_id))
 # Get a baseline and a projection to use as test selections
 
 # SSP1
-test_base <- test_species %>% 
+test_base <- test_species %>%
   filter(
-    scenario == scenario_choice, 
-    temp_horizon == "0C") %>% 
+    scenario == scenario_choice,
+    temp_horizon == "0C") %>%
   st_as_sf()
-test_proj <- test_species %>% 
+
+
+# Plot a baseline
+ssp_proj_map(dist_df = test_base, reactive = F)
+
+
+
+# Get the values at a horizon
+test_proj <- test_species %>%
   filter(
-    scenario == scenario_choice, 
-    temp_horizon == horizon_choice) %>% 
+    scenario == scenario_choice,
+    temp_horizon == horizon_choice) %>%
   st_as_sf()
 
 
@@ -140,7 +160,8 @@ ui <- page_navbar(
   #### Side Panel Controls  ####
   sidebar = sidebar(
     id = "sideBar", 
-    title = "Select a Species to See its Projections:",
+    title = "Select a Species and Climate Scenario for Projections:",
+    
     
     # Panel to display the Controls
     nav_panel(
@@ -179,30 +200,35 @@ ui <- page_navbar(
       # Card 1: Written Description
       card(
         card_header(
-          class = "bg-dark",
+          # class = "bg-dark",
+          style = "background-color: #004966;  color: white;",
           "Baseline Period Characteristics"),
         
         card_body(
-          markdown("**What is meant by baseline?**"),
+          h3(markdown("**Using Historic Baselines for Comparison**")),
+          
+          p("The map to the right shows the estimated distribution of this species
+             over a ten-year baseline period. Distribution models estimate each species' 
+             biomass using average surface and bottom temperatures and any 
+             persistent associations to specific areas observed in the data."),
+          
           card_body(
             class = "p-static",
-            strong("To set standards from which to compare against, we've used a ten-year period of 2010-2019 as our modern baseline."),
-          
-            p("Scientists lean on observations from baseline periods to learn a species preferences 
-               for different environments. Using data from these periods scientists model how a 
-               species responds to changes in the natural environment. Understanding these 
-               relationships allow scientists to make an educated guess on distribution 
-               changes under projected future conditions."),
+            em("This site uses a ten-year period (2010-2019) as a modern baseline 
+                from which to compare projected future changes against."),
+            p("Models are tools which help scientists understand how species respond 
+               to changes in the environment. Abundance data from this baseline period 
+               is used to train models to learn each species' unique preferences for 
+               different environmental conditions. Modeled relationships allows scientists 
+               to make an educated guess on distribution changes under projected future conditions.
+               "),
             
-            p("The map to the right displays the average baseline period biomass  
-               based on average environmental conditions. Physical factors in the model include: 
-               surface and bottom temperature, and any tendencies to cluster around 
-               important seafloor features."), 
+             
             
-            p("Over this baseline period, _____ have shown the following broad characteristics and preferences:"),
-            ####  Testing Dynamic Text####
-            verbatimTextOutput("species_text"),
+            #p("Over this baseline period, _____ have shown the following broad characteristics and preferences:"),
             
+            ####  Dynamic Text TEsting ####
+            textOutput("species_text"),
             
             
             ##### b. Value Boxes  ####
@@ -251,7 +277,7 @@ ui <- page_navbar(
         card_footer(markdown("[Learn more about the ecology of this species](https://www.fisheries.noaa.gov/species/atlantic-cod)"))
       ),
       
-      #### c. Baseline Map  ####
+      ##### c. Baseline Map  ####
       # Use Module for map card
       projection_map_ui("baseline_bio_map")
       
@@ -260,26 +286,26 @@ ui <- page_navbar(
     ) # End layout_col for map and baseline description
     
     
-    
-    
-    
-    
   ), # End nav_panel 1
+  
+  
+  
+  
   
     #### Tab 2: Projected Biomass  ####
     nav_panel(
-      title = "2. Projected Future Distribution", 
+      title = "2. Projected Distribution Change", 
       value = "projected_bio_tab",
        
       layout_column_wrap(
         width = 1/2, 
         height = 800,
         
-        ##### Description ####
+        ##### a. Timeseries Projections ####
         # Card 1: Projected Density Timeseries
         projected_timeseries_ui("projected_bio_timeseries"), 
               
-        ##### Map ####
+        ##### b. Projected Bio Map ####
         # Card 2: Projected Species Distribution
         projection_map_ui("projected_bio_map") 
 
@@ -291,22 +317,23 @@ ui <- page_navbar(
   
   
   
-    #### Tab 3. Biomass Change  ####
+    #### Tab 3. Biomass Changes  ####
     
     nav_panel(
       title = "3. Changes to Habitat Suitability",
       value = "difference_tab",
       
-      ##### a. Description #### 
+      
       layout_column_wrap(
         width = 1/2, 
         height = 800,
         
-        # Card 1: Written Description
+        ##### a. Preference Curves #### 
+        # Card 1: Preference Curve Plot
         preference_card_ui("preference_curve_plot"),
         
-        # Card 3: Projected Difference Map
-        # Card Module testing
+        #####  b. Distribution Change  ####
+        # Card 2: Projected Difference Map
         difference_map_ui("projected_diff_map")
         
       ) # End layout column
@@ -359,10 +386,14 @@ server <- function(input, output, session) {
   # 1. Filter the input data for the different pieces:
   # id matches the sidebar id where the inputs all are
   
+  
+  
+  
   # Spatial density projections: species
   species_dat    <- filterSpecies_server(
     "sidebar_ID", 
     species_projection_list = species_projection_list)
+  
   
   # Projected densities: baseline
   baseline_dat   <- filterBaseline_server(
@@ -403,20 +434,42 @@ server <- function(input, output, session) {
   # ID's should match the cards for their outputs
   
   # Card 1: Baseline projection
-  projection_map_server(id = "baseline_bio_map", in_data = baseline_dat)
+  projection_map_server(
+    id = "baseline_bio_map", 
+    in_data = baseline_dat)
   
   # Card 2: 
   # a. projected timeseries
-  projected_timeseries_server(id = "projected_bio_timeseries", in_data = timeseries_dat)
+  projected_timeseries_server(
+    id = "projected_bio_timeseries", 
+    in_data = timeseries_dat)
   
-  # b. projected map
-  projection_map_server(id = "projected_bio_map", in_data = projection_dat, add_labels = TRUE)
+  # b. Projected Biomass Map
+  projection_map_server(
+    id = "projected_bio_map", 
+    in_data = projection_dat, 
+    add_labels = TRUE)
   
   # Card 3:
   # a. 
-  preference_curve_server("preference_curve_plot", in_data = preferences_dat) 
+  preference_curve_server(
+    "preference_curve_plot", 
+    in_data = preferences_dat) 
   # b. difference map
-  difference_map_server(id = "projected_diff_map", in_data = difference_dat)
+  difference_map_server(
+    id = "projected_diff_map", 
+    in_data = difference_dat)
+  
+  
+  
+  ####  Reactive Text  ####
+  
+  selected_species <- updateSpecies("sidebar_ID")  # call the module
+  
+  output$species_text <- renderText({
+    paste0(str_to_title(selected_species()),  " have shown the following broad characteristics and preferences over this baseline period:")
+  })
+  
   
   
   

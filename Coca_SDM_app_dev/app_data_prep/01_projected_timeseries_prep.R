@@ -61,7 +61,8 @@ name_fix <- tribble(
 
 # This has all the regions:
 regional_ts <- read_csv(
-  file = here::here("Data/projections/annual_regional_species_projections.csv"), 
+  #file = here::here("Data/projections/annual_regional_species_projections.csv"), 
+  file = here::here("COCA_SDM_app_dev/dev", "projections/annual_regional_species_projections.csv"), 
   col_types = list(
     species  = col_character(),
     scenario = col_character(),

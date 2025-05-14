@@ -16,6 +16,9 @@
 # 3. Creates distinct location information so we can join in the simple feature info later
 
 
+#### Bonus Stuff:
+# unique_pts object is built in here
+
 
 ####  Packages  ####
 library(tidyverse)
@@ -331,7 +334,11 @@ match_nodes <- function(new_densities, old_densities){
 
 
 # Perform the switcheroo
-rolling_dens <- map(rolling_dens, ~match_nodes(.x, old_densities = rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean))
+rolling_dens <- map(
+  .x = rolling_dens, 
+  .f = ~match_nodes(.x, old_densities = rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean))
+
+
 
 # double check
 # # Do the new species differ from the old species coordinates? NO
@@ -366,6 +373,7 @@ rolling_dens <- map(rolling_dens, ~left_join(.x, unique_pts, by = join_by(Lat, L
 
 ##### Save Unique Locations  #### 
 # write_csv(unique_pts, here::here("Data/spatial/unique_location_coords.csv"))
+# write_csv(unique_pts, here::here("COCA_SDM_app_dev/dev/scratch_data", "unique_location_coords.csv"))
 
 
 
@@ -383,7 +391,8 @@ all_density_results <- rolling_dens %>%
 
 
 # Save here, and split the subroutines off into their own scripts
-write_csv(all_density_results, here::here("Data/projections/VAST_all_densities_all_species.csv"))
+#write_csv(all_density_results, here::here("Data/projections/VAST_all_densities_all_species.csv"))
+write_csv(all_density_results, here::here("COCA_SDM_app_dev/dev/projections/VAST_all_densities_all_species.csv"))
 
 
 
@@ -437,7 +446,8 @@ densities_baseline_preroll <- density_estimates %>%
 
 
 # Save the baseline average densities
-write_csv(densities_baseline_preroll, here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+# write_csv(densities_baseline_preroll, here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+write_csv(densities_baseline_preroll, here::here("COCA_SDM_app_dev/dev/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
 
 
 
@@ -477,107 +487,6 @@ unique_pts_within %>%
   geom_sf(data = domain_use) +
   geom_sf()
 
-
-# All the points are already within the area...
-
-
-
-
-
-
-
-
-####_______________________####
-
-#Note:
-# These steps have been refined and moved to their own scripts
-# They document the different ways to generate grids from VAST locations
-
-
-#### Creating Grids from VAST Points/Nodes  ####
-
-
-
-# These can all start from rolling dens, or the summarized outputs
-# the latter can be joined by pt_id to unique_pts
-# OR they can be joined with the geometries we desire
-
-
-####  Option 1: Buffer + Square  ####
-
-# Takes the coordinates for the data and makes a rectangle around that centroid point
-# Uses buffer and a desired area. Input area uses the units of coords
-bSquare <- function(x, a, coords = c("x", "y")) {
-    a <- sqrt(a) / 2 # Get square root of area to get a length for buffer distance
-    x_temp <- sf::st_as_sf(x, coords = coords, crs = 4326, remove = FALSE)
-    x <- st_transform(x_temp, crs = 32619) #%>% drop_na(Value)
-    x <- x %>%
-        mutate(., geometry = sf::st_buffer(geometry,
-            dist = a,
-            nQuadSegs = 1,
-            endCapStyle = "SQUARE"
-        ))
-    return(x)
-}
-
-
-
-# Results of bsquare
-test_bsquare <- rolling_dens$Butterfish_full_CMIP6_SSP1_26_mean %>% 
-  filter(Year == 1985) %>% 
-  bSquare(a = 25000^2, coords = c("Lon", "Lat")) 
-test_bsquare %>% ggplot() + geom_sf()
-
-
-####  Option 2: Square/Hexagon st_make_grid  ####
-
-
-# Take the same data, and make a fishnet grid
-# Will preserve the other columns if they exist
-sf_meshify <- function(input_df, coords = c("Lon", "Lat"), length_km = 25, in_crs = 4326, trans_crs = 32619, square = T){
-  
-  # Make the dataframe an sf class using coordinates
-  in_sf <- st_as_sf(input_df, coords = coords, crs = in_crs, remove = F) %>% 
-    # Transform it to a crs that is projected in meters
-    st_transform(crs = trans_crs)
-  
-  # If we are getting gaps we can buffer here:
-  
-  
-  # Use that data to define a grid with dimensions of length_km*length_km
-  sf_grid <- st_make_grid(
-    x = in_sf,
-    cellsize = c(length_km*1000, length_km*1000), 
-    what = "polygons", 
-    square = square) %>% 
-    # Make the grid an sf class
-    st_as_sf() 
-  
-  # Use the original data to trim it so its just cells that overlap the points
-  sf_out <- sf_grid %>% 
-    st_filter(in_sf, .predicate = st_contains) %>%
-    st_as_sf() 
-    
-  # Join the clipped grid to the dataset
-  sf_out <- st_join(sf_out, in_sf, join = st_intersects)
-  # Return the results  
-  return(sf_out)
-  
-}
-
-
-
-
-# Testing the function: squares
-sf_meshify(input_df = unique_pts) %>%  
-  ggplot() +
-  geom_sf()
-
-
-# Testing the function: hexagons
-sf_meshify(unique_pts, square = F, length_km = 30) %>% 
-  ggplot() +
-  geom_sf()
 
 
 

@@ -9,17 +9,22 @@ projected_timeseries_ui <- function(id){
   # Card 1: Written Description
   card(
     card_header(
-      class = "bg-dark",
+      # class = "bg-dark",
+      style = "background-color: #004966;  color: white;",
       "Projecting Based on Future Conditions"),
+    
     card_body(
-      markdown("How are Future Distributions Estimated?"),
-      card_body(
-        class = "p-static",
-        p("Scientist make projections using the observed changes in
+      h3(markdown("**Estimating Projected Distributions**")),
+      
+      p("Scientist make projections using the observed changes in
            the presence/absence + abundances of species with the 
            surface & bottom temperatures from the baseline period. These
            relationships are then projected forward using climate 
            model ensembles."), 
+      
+      card_body(
+        class = "p-static",
+        
         p("Displayed below are the longer-term trajectories four four major areas of interest."),
         plotOutput(
           NS(id, "proj_timeseries"), 

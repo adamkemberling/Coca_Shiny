@@ -10,7 +10,8 @@ projection_map_ui <- function(id){
     
     # Card Header Contents
     card_header(
-      class = "bg-dark", 
+      #class = "bg-dark", 
+      style = "background-color: #004966;  color: white;",
       "Distribution Under Average Conditions"),
     
     # Card Body Content
@@ -18,15 +19,16 @@ projection_map_ui <- function(id){
       
       # Headline text above the plot - 
       #can be swapped with textoutput to be reactive
-      markdown("Model-Predicted Density Distribution"),
+      h3(markdown("**Model-Estimated Spatial Distributions**")),
+      
+      p("The map below displays the projected biomass  
+           distribution based on habitat preferences & local environmental 
+           conditions."),
       
       # This is where the focal element goes:
       card_body(
         class = "p-distribution_map",
-        
-        p("The map to the right displays the projected biomass  
-           distribution based on habitat preferences & local environmental 
-           conditions."), 
+      
         
         # Map Display:
         plotOutput(
@@ -41,7 +43,8 @@ projection_map_ui <- function(id){
       class = "fs-6",
       "Projected distributions not based on stock recovery status 
       or any ecological interactions.")
-  ) # Close the card
+  
+    ) # Close the card
   
 }
 

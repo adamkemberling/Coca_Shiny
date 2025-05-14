@@ -10,21 +10,22 @@ difference_map_ui <- function(id){
     
     # Card Header Contents
     card_header(
-      class = "bg-dark", 
+      style = "background-color: #004966;  color: white;",
       "Changes in Biomass Distribution Under Future Climate Scenario"),
     
     # Card Body Content
     card_body(
       
       # Headline text above the plot - can be swapped with textoutput to be reactive
-      markdown("Mapping the Impact of Projected Future Conditions"),
+      h3(markdown("**Projected Impacts of Environmental Change**")),
+      
+      p("The display below maps how biomass is projected to change
+         under future conditions consistent with our ensemble climate data."),
       
       # This is where the focal element goes:
       card_body(
         class = "p-distribution_map",
         
-        p("The display below maps how biomass is projected to change
-         under future conditions consistent with our ensemble climate data."),
         
         # Map Display
         plotOutput(
@@ -46,6 +47,8 @@ difference_map_ui <- function(id){
 
 
 
+
+
 # Server side: Baseline Map Generation
 difference_map_server <- function(id, in_data) {
   
@@ -62,7 +65,8 @@ difference_map_server <- function(id, in_data) {
         
         # Function to produce the plot
         map_out <- ssp_difference_map(              
-          dist_df = dat, reactive = T)
+          dist_df = dat, 
+          reactive = T)
         print(map_out)
         
       })

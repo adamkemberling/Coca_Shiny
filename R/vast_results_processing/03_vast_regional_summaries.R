@@ -20,14 +20,14 @@ sf_use_s2(FALSE)
 
 
 ####  Master Data  ####
-unique_pts <- read_sf(here::here("Data/spatial/unique_location_coords.csv"))
+unique_pts <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "unique_location_coords.csv"))
 
 
 # Density data for all species - after 5-year rolling avg
-all_density_results <- read_csv(here::here("Data/projections/VAST_all_densities_all_species.csv"))
+all_density_results <- read_csv(here::here("COCA_SDM_app_dev/dev", "projections/VAST_all_densities_all_species.csv"))
 
 # Density data for baseline period - no 5-year roll done
-all_baseline_periods <- read_csv(here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+all_baseline_periods <- read_csv(here::here("COCA_SDM_app_dev/dev", "projections/VAST_baseline_2010to2019_densities_all_species.csv"))
 
 
 ####  Regional Boundaries  ####
@@ -87,13 +87,15 @@ zones <- stat_zones %>%
 
 
 
+
+
+
 ####  Overlay Function  ####
 
 
 # 1. Define a function that determines what shapefile the points fall in
 # To speed things up we can use the unique point ID's to filter
 # Only need to perform this once for each area to know which are within each region:
-
 
 
 # input 1: Unique locations as sf
@@ -278,7 +280,7 @@ all_regional_densities %>%
 
 
 # Save these somewhere:
-write_csv(all_regional_densities, here::here("Data/projections/annual_regional_species_projections.csv"))
+write_csv(all_regional_densities, here::here("COCA_SDM_app_dev/dev", "projections/annual_regional_species_projections.csv"))
 
 
 
@@ -294,7 +296,7 @@ write_csv(all_regional_densities, here::here("Data/projections/annual_regional_s
 ##### Community Fishing Footprints  ####
 
 # Load the footprints
-fprints <- read_rds(here::here("Data/spatial/Community_Footprints.RDS"))
+fprints <- read_rds(here::here("COCA_SDM_app_dev/dev", "scratch_data/Community_Footprints.RDS"))
 
 
 # Format as sf
@@ -331,8 +333,8 @@ community_baseline_densities <- imap_dfr(
 
 
 # Save these somewhere:
-write_csv(community_footprint_densities, here::here("Data/projections/annual_community_footprint_projections.csv"))
-write_csv(community_baseline_densities, here::here("Data/projections/baseline_community_footprint_projections.csv"))
+write_csv(community_footprint_densities, here::here("COCA_SDM_app_dev/dev", "projections/annual_community_footprint_projections.csv"))
+write_csv(community_baseline_densities, here::here("COCA_SDM_app_dev/dev", "projections/baseline_community_footprint_projections.csv"))
 
 
 

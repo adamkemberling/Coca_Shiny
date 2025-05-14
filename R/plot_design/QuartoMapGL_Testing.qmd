@@ -1,0 +1,182 @@
+---
+title: "Quarto Mapgl or Plot"
+format: html
+execute:
+  enabled: true
+  echo: false
+---
+
+## Abundance Heatmap
+
+I want to leverage observable to make some exploratory visuals for assessing vast outputs
+
+
+Next steps:
+ * Change symbology to the hexagons, load those in and merge them at the last minute
+ * Set x/y limits so we can see things
+ * Set a seasonal side-by-side
+
+
+
+```{r}
+#| echo: false
+#| message: false
+library(here)
+library(tidyverse)
+
+
+# Load the VAST Projection Details
+vast_projections <- read_csv(here::here("COCA_SDM_app_dev/dev/projections/VAST_all_densities_all_species.csv"))
+
+# Example: load data and write to JSON
+df <- vast_projections %>% #distinct(VAST_id)
+  filter(str_detect(VAST_id, "Cod")) %>% 
+  mutate(VAST_id = str_replace(VAST_id, "_full_", "-")) %>% 
+    separate(VAST_id, into = c("species", "scenario"), sep = "-") %>% 
+    mutate(
+      species = str_replace_all(species, "_", " "),
+      species = tolower(species),
+      scenario = str_remove(scenario, "_mean")) %>% 
+  filter(scenario == "CMIP6_SSP5_85")
+
+
+# Optionally reduce or round for performance
+df_small <- df %>%
+  mutate(date = as.character(Time)) %>%
+  filter(date < as.Date("2026-01-01")) %>% 
+  select(date, lat = Lat, lon = Lon, abundance = Prob_0.5)
+
+# Save JSON for Observable to use
+jsonlite::write_json(df_small, "abundance.json", pretty = TRUE, auto_unbox = TRUE)
+```
+
+
+
+
+
+
+```{ojs}
+// Load JSON data
+abundance_data = await FileAttachment("abundance.json").json()
+```
+
+
+```{ojs}
+// Extract available dates for slider
+dates = Array.from(new Set(abundance_data.map(d => d.date))).sort()
+
+// Create slider input
+viewof date = Inputs.select(dates, {label: "Select Date", value: dates[0]})
+```
+
+```{ojs}
+// Filter data for selected date
+filtered = abundance_data.filter(d => d.date === date)
+```
+
+
+
+
+```{ojs}
+
+// Create a map using Observable Plot
+Plot.plot({
+  width: 800,
+  height: 600,
+  projection: "mercator",
+  marks: [
+    Plot.dot(filtered, {
+      x: "lon",
+      y: "lat",
+      r: d => Math.sqrt(d.abundance),
+      fill: "steelblue",
+      fillOpacity: 0.6,
+      stroke: "white",
+      strokeWidth: 0.5,
+      title: d => `Abundance: ${d.abundance}`
+    }),
+    Plot.graticule()
+  ]
+})
+
+```
+
+
+
+```{r}
+# This wasn't working, trouble loading deck.gl into quarto
+# https://talk.observablehq.com/t/maplibre-gl-and-deck-gl-in-observable-framework/9024
+# https://observablehq.com/framework/lib/deckgl
+
+ # // Load mapgl
+ # //import {Deck} from "@observablehq/mapgl"
+ # import {Deck} from "npm:deck.gl";
+ # 
+ # 
+ # // Create heatmap with Deck GL
+ # chart = Deck({
+ #   initialViewState: {
+ #     longitude: d3.mean(filtered, d => d.lon),
+ #     latitude: d3.mean(filtered, d => d.lat),
+ #     zoom: 5,
+ #     pitch: 0
+ #   },
+ #   controller: true,
+ #   layers: [
+ #     {
+ #       type: "HeatmapLayer",
+ #       data: filtered,
+ #       getPosition: d => [d.lon, d.lat],
+ #       getWeight: d => d.abundance,
+ #       radiusPixels: 60
+ #     }
+ #   ]
+ # })
+```
+
+
+
+
+```{r}
+
+# # I couldn't do this because observable reserves the namespace for "Map"
+# 
+# import {Map as LeafletMap} from "@observablehq/map"
+# 
+# // Create a zoomable Leaflet map
+# myMap = LeafletMap({
+#   style: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", // OSM basemap
+#   center: d3.geoCentroid({type: "FeatureCollection", features: filtered.map(d => ({
+#     type: "Feature",
+#     geometry: {type: "Point", coordinates: [d.lon, d.lat]}
+#   }))}),
+#   zoom: 3,
+#   height: 600
+# })
+# 
+# 
+# // Create Plot overlay as an SVG that gets redrawn when the map moves
+# myMap.overlay((map) => {
+#   const projected = filtered.map(d => {
+#     const [x, y] = map.project([d.lon, d.lat])
+#     return {...d, x, y}
+#   })
+# 
+#   return Plot.svg({
+#     width: map.size[0],
+#     height: map.size[1],
+#     marks: [
+#       Plot.dot(projected, {
+#         x: "x",
+#         y: "y",
+#         r: d => Math.sqrt(d.abundance),
+#         fill: "steelblue",
+#         fillOpacity: 0.6,
+#         stroke: "white",
+#         title: d => `Abundance: ${d.abundance}`
+#       })
+#     ]
+#   })
+# })
+
+```

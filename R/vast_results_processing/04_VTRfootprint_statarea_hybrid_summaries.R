@@ -15,6 +15,24 @@ library(gt)
 # Path to research folder
 res_path <- cs_path("res")
 
+library(rnaturalearth)
+new_england <- ne_states(returnclass = "sf")
+
+# Path to the directory containing the font file (replace with your actual path)
+library(showtext)
+font_dir <- paste0(system.file("stylesheets", package = "gmRi"), "/GMRI_fonts/Avenir/")
+
+# Register the font
+font_add(
+  family = "Avenir",
+  file.path(font_dir, "LTe50342.ttf"),
+  bold = file.path(font_dir, "LTe50340.ttf"),
+  italic = file.path(font_dir, "LTe50343.ttf"),
+  bolditalic = file.path(font_dir, "LTe50347.ttf"))
+
+# Load the font
+showtext::showtext_auto()
+
 
 
 ####  Spatial Files  ####
@@ -44,7 +62,7 @@ stat_zones <- read_sf(str_c(res_path, "Shapefiles/Statistical_Areas/Statistical_
 
 
 # Load the footprints
-fprints <- read_rds(here::here("Data/spatial/Community_Footprints.RDS"))
+fprints <- read_rds(here::here("COCA_SDM_app_dev/dev", "scratch_data/Community_Footprints.RDS"))
 
 
 # Format as sf
@@ -58,23 +76,7 @@ fprints <- imap(fprints, ~st_as_sf(.x) %>%
 
 
 ### Plotting 1: with land:
-library(rnaturalearth)
-new_england <- ne_states(returnclass = "sf")
 
-# Path to the directory containing the font file (replace with your actual path)
-library(showtext)
-font_dir <- paste0(system.file("stylesheets", package = "gmRi"), "/GMRI_fonts/Avenir/")
-
-# Register the font
-font_add(
-  family = "Avenir",
-  file.path(font_dir, "LTe50342.ttf"),
-  bold = file.path(font_dir, "LTe50340.ttf"),
-  italic = file.path(font_dir, "LTe50343.ttf"),
-  bolditalic = file.path(font_dir, "LTe50347.ttf"))
-
-# Load the font
-showtext::showtext_auto()
 
 ggplot() +
   geom_sf(data = fprints$`NEW BEDFORD, MA` %>% 
@@ -85,7 +87,7 @@ ggplot() +
   geom_sf(data = new_england) +
   coord_sf(xlim = c(-76, -66.5), ylim = c(37.25, 44)) +
   theme_bw() +
-  map_theme(text = element_text(family = "Avenir", size = 30)) + 
+  map_theme(text = element_text(family = "Avenir", size = 12)) + 
   labs(title = "New Bedford, MA",
        subtitle = "Reported fisheries activity footprint")
 
@@ -391,15 +393,15 @@ sf_use_s2(FALSE)
 
 
 ####  Master Data  ####
-unique_pts <- read_sf(here::here("Data/spatial/unique_location_coords.csv"))
+unique_pts <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "unique_location_coords.csv"))
 
 
 # Density data for all species
-all_density_results <- read_csv(here::here("Data/projections/VAST_all_densities_all_species.csv"))
+all_density_results <- read_csv(here::here("COCA_SDM_app_dev/dev", "projections/VAST_all_densities_all_species.csv"))
 
 
 # Density data for baseline period
-all_baseline_periods <- read_csv(here::here("Data/projections/VAST_baseline_2010to2019_densities_all_species.csv"))
+all_baseline_periods <- read_csv(here::here("COCA_SDM_app_dev/dev", "projections/VAST_baseline_2010to2019_densities_all_species.csv"))
 
 # input 1: Unique locations as sf
 unique_pts_sf <- unique_pts %>% st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F)
@@ -578,6 +580,6 @@ hybrid_baseline_densities <- footprint_rules %>%
 ####  Save Hybrids  ####
 
 # Save these somewhere:
-write_csv(hybrid_densities, here::here("Data/projections/annual_small_footprint_szone_overlap_projections.csv"))
-write_csv(hybrid_baseline_densities, here::here("Data/projections/baseline_small_footprint_szone_overlap_projections.csv"))
+write_csv(hybrid_densities, here::here("COCA_SDM_app_dev/dev", "projections/annual_small_footprint_szone_overlap_projections.csv"))
+write_csv(hybrid_baseline_densities, here::here("COCA_SDM_app_dev/dev", "projections/baseline_small_footprint_szone_overlap_projections.csv"))
 

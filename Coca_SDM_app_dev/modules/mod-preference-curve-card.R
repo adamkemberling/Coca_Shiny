@@ -9,21 +9,26 @@ preference_card_ui <- function(id){
   # Card 1: Written Description
   card(
     card_header(
-      class = "bg-dark",
+      # class = "bg-dark",
+      style = "background-color: #004966;  color: white;",
       "Change in Distribution under Projected Climate Change"),
     
     card_body(
-      markdown("Biomass changes projected based on shifting conditions"),
+      h3(markdown("**Projected Biomass Change from Shifting Conditions**")),
+      
+      p("The display below shows where regional conditions are projected to be (vertical lines),
+      relative to this species observed habitat preferences (preference curves)."),
+      
       card_body(
         class = "p-static",
         #plotly_widget
-        p("The display below shows where regional conditions are relative to this species' 
-          habitat preferences."),
+        
         plotOutput(
           NS(id, "pref_curves"), 
           height = "100%", 
           width = "100%")
       )),
+    
     card_footer(
       markdown("[Learn more about model diagnostics here.](https://climatedata.ca/resource/understanding-shared-socio-economic-pathways-ssps/)")
     )

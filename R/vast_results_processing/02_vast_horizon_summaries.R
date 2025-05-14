@@ -17,17 +17,17 @@ library(gmRi)
 sf_use_s2(FALSE)
 
 
-####  Master Data  ####
-unique_pts <- read_sf(here::here("Data/spatial/unique_location_coords.csv"))
+####  Load Input Data and Constants  ####
+unique_pts <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "unique_location_coords.csv"))
 
 # Density data
-all_density_results <- read_csv(here::here("Data/projections/VAST_all_densities_all_species.csv"))
+all_density_results <- read_csv(here::here("COCA_SDM_app_dev/dev", "projections/VAST_all_densities_all_species.csv"))
 rolling_dens <- all_density_results %>% split(.$VAST_id) 
 
 
 # Study area outline shapefile
 domain_use <- st_read(str_c(cs_path("mills", "Projects/sdm_workflow/data 2/supporting/region_shapefile"), "full_survey_region.shp"))
-
+domain_use <- st_make_valid(domain_use)
 
 
 
@@ -175,8 +175,6 @@ temp_horizon_summarize <- function(
   
 }
 
-
-
 # # TESTING:
 # # Run it for A species
 # temp_horizon_summarize(
@@ -322,6 +320,8 @@ horizon_summ_szns_ssp5 <- imap_dfr(
 
 
 
+
+
 ####  Rejoin the Scenarios  ####
 
 
@@ -345,9 +345,9 @@ horizons_out_szns <- drop_na(horizons_out_szns)
 #####  Saving Horizon Summaries  ####
 
 # Save the decadal milestone summaries
-write_csv(horizons_out, here::here("Data/projections/Cmilestones_all_species_test.csv"))
+write_csv(horizons_out, here::here("COCA_SDM_app_dev/dev", "projections/Cmilestones_all_species_test.csv"))
 
 # Save seasonal version
-write_csv(horizons_out_szns, here::here("Data/projections/Cmilestones_all_seasons_test.csv"))
+write_csv(horizons_out_szns, here::here("COCA_SDM_app_dev/dev", "projections/Cmilestones_all_seasons_test.csv"))
 
 

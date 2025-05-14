@@ -21,32 +21,37 @@ labels_df <- tibble(
 ####  Raw Materials  ####
 
 # Read the cropped land coverage:
-land_sf <- read_sf(here::here("./Data/spatial/nw_atlantic_countries_crs32619.geojson"))
+# land_sf <- read_sf(here::here("Data/spatial/nw_atlantic_countries_crs32619.geojson"))
+land_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "nw_atlantic_countries_crs32619.geojson"))
 
 # Load the Hague Lines
-hague_sf <- read_sf(here::here("Data/spatial", "hagueline_crs32619.geojson"))
+# hague_sf <- read_sf(here::here("Data/spatial", "hagueline_crs32619.geojson"))
+hague_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hagueline_crs32619.geojson"))
 
 # Hexagonal grid
-hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
+# hex_grid <- read_sf(here::here("Data/spatial/hex_grid.geojson"))
+hex_grid <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hex_grid.geojson"))
 
-epu_buff <- read_sf(here::here("Data/spatial/EPU_Separated_Buffer2/EPU_Separated_Buffer2.shp"))
+# Buffer?
+# epu_buff <- read_sf(here::here("Data/spatial/EPU_Separated_Buffer2/EPU_Separated_Buffer2.shp"))
+epu_buff <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "EPU_Separated_Buffer2/EPU_Separated_Buffer2.shp"))
 
 
 ####  Plot Themes  ####
 
 # Plotting map theme
-theme_map <- function(guides = T, ...){
+theme_map <- function(fontfam = "Avenir", guides = T, ...){
   list(
     # Theme options, with ellipse to add more
     theme(
       # Font across all text
-      text = element_text(family = "Avenir"),
+      text = element_text(family = fontfam),
       
       # Titles + Text
-      plot.title = element_text(hjust = 0, face = "bold", size = 18),
-      plot.subtitle = element_text(size = 16),
-      legend.title = element_text(size = 14, lineheight = 1.75),
-      legend.text = element_text(size = 12), 
+      plot.title = element_text(hjust = 0, face = "bold", size = 20),
+      plot.subtitle = element_text(size = 18),
+      legend.title = element_text(size = 16, lineheight = 1.75),
+      legend.text = element_text(size = 14), 
       legend.spacing.y = unit(1.75, "lines"),
       
       # Grids and Axes
@@ -70,9 +75,9 @@ theme_plot <- function(fontfam = "Avenir", ...){
     theme(
       # Titles
       plot.title    = element_text(family = fontfam, hjust = 0, face = "bold", size = 16),
-      plot.subtitle = element_text(family = fontfam,  size = 14),
-      legend.title  = element_text(family = fontfam, size = 14),
-      legend.text   = element_text(family = fontfam, size = 12),
+      plot.subtitle = element_text(family = fontfam,  size = 18),
+      legend.title  = element_text(family = fontfam, size = 16),
+      legend.text   = element_text(family = fontfam, size = 14),
       legend.spacing.x = unit(1, "lines"),
       
       # Axes
@@ -146,9 +151,18 @@ theme_plot <- function(fontfam = "Avenir", ...){
 }
 
 
+####  Functions  ####
 
 # Round to next power of 10
 roundup_tens <- function(x) {10^ceiling(log10(x))}
+
+
+
+
+
+
+#####_____________________#####
+##### Static Application Displays  ####
 
 ####  Biomass Density Map  ####
 
@@ -167,9 +181,10 @@ ssp_proj_map <- function(
   if(reactive){density_sf <- dist_df()}
   
   # Hide values below some threshold
-  density_sf <- density_sf %>% 
-    mutate(val = ifelse(val < 0.9, NA, val),
-           val_alpha = ifelse(is.na(val), 0, 0.8))
+  density_sf <- density_sf %>%
+    mutate(
+      val = ifelse(val < 0.9, NA, val),
+      val_alpha = ifelse(is.na(val), 0, 0.8))
   
   # Get scenario/horizon from the data so we don't need to feed so many inputs
   one_rec  <-  density_sf %>% slice(1)
@@ -202,7 +217,8 @@ ssp_proj_map <- function(
   
   # Prepare title text:
   plot_title <- str_c(str_to_title(species), " | Biomass Density with +", horizon_choice, " Climate")
-  if(horizon == "0C"){plot_title <- str_c(str_to_title(species), " | Baseline Period (2010-2019) Biomass Density")}
+  if(horizon == "0C"){
+    plot_title <- str_c(str_to_title(species), " | Baseline Period (2010-2019) Biomass Density")}
   plot_subtitle = str_c(scenario, " Timeframe: ", horizon_years)
   
   
@@ -277,13 +293,18 @@ ssp_proj_map <- function(
 
 # Getting differences
 get_difference <- function(base_dat, proj_dat){
+  
+  # Take info from baseline period and projection period
+  # Remove things
   base_dat <- st_drop_geometry(base_dat) %>% select(-c(ref_period, temp_horizon, var))
   proj_dat <- st_drop_geometry(proj_dat) %>% select(-c(var, ref_period)) %>% rename(proj_val = val)
+  
   # Join and get differences
   diff_dat <- left_join(base_dat, proj_dat) %>% 
     mutate(val_diff = proj_val - val)
   
   # Perform any calculations for data prep to keep out of mapping function
+  
   
   # Add context for symbology
   diff_dat <- diff_dat %>% 
@@ -348,7 +369,10 @@ ssp_difference_map <- function(dist_df, reactive = F, range_shift = T){  # Color
   horizon_years <- horizon_year_key[[scenario]][[horizon]]
   
   # Clean up scenario text
-  scenario <- ifelse(scenario == "CMIP6_SSP1_26", "SSP1-2.6", "SSP5-8.5")
+  scenario <- ifelse(
+    scenario == "CMIP6_SSP1_26", 
+    "SSP1-2.6", 
+    "SSP5-8.5")
   
   # Clean up horizon text
   horizon_choice <- str_c(str_remove(horizon, "C"), deg_c)
@@ -382,7 +406,9 @@ ssp_difference_map <- function(dist_df, reactive = F, range_shift = T){  # Color
         "Range Lost" = "#CA562C"), 
         na.value = "transparent",
         na.translate = F) +
-      guides(color = guide_legend(order = 2, override.aes = (list(fill = "transparent", linetype = 1)))) +
+      guides(color = guide_legend(
+        order = 2, 
+        override.aes = (list(fill = "transparent", linetype = 1)))) +
       labs(color = "Range Shifts:")
     
     
@@ -503,7 +529,11 @@ ssp_projected_timeseries <- function(timeseries_data, reactive = F){
       limits = c(0,NA), 
       expand = expansion(mult = c(0, 0.25)),
       breaks = pretty_breaks()) +
-    guides(color = guide_legend(title.vjust = 0.5, override.aes = list(fill = "white"))) +
+    guides(color = guide_legend(
+      title.vjust = 0.5, nrow = 2, 
+      override.aes = list(
+        fill = "white", 
+        linewidth = 1))) +
     theme_plot() +
     labs(
       y = "Average Biomass Density kg/km2", 
@@ -559,9 +589,8 @@ plot_preference_curves <- function(pref_dat, reactive = F){
   curve_dat %>% 
     ggplot() +
     # Mark the preference curves
-    geom_ribbon(
-      aes(x = val_actual, ymin = 0, ymax = fit_exp), 
-      color = "transparent", alpha = 0.3, fill = gmri_cols("blue economy teal")) +
+    geom_ribbon(aes(x = val_actual, ymin = 0, ymax = fit_exp), 
+                color = "transparent", alpha = 0.3, fill = "#057872") +
     geom_line(aes(val_actual, fit_exp, group = comname), linewidth = 1) +
     # Label the regional averages
     geom_vline(
@@ -582,7 +611,7 @@ plot_preference_curves <- function(pref_dat, reactive = F){
       aes(x = val, y = I(.4), color = temp_horizon, label = round(val)), 
       key_glyph = draw_key_rect, label.size = 1,
       label.padding = unit(0.7, "lines"), label.r = unit(0.5, "lines")) +
-    scale_color_manual(values = gmri_cols("lv orange"), na.translate = F) +
+    scale_color_manual(values = "#ea4f12", na.translate = F) +
     facet_grid(
       region~variable, 
       scales = "free",
@@ -590,8 +619,8 @@ plot_preference_curves <- function(pref_dat, reactive = F){
         region = label_wrap_gen(10),
         variable = label_wrap_gen(10))) +
     scale_x_continuous(expand = expansion(add = c(0,0))) +
-    scale_y_continuous(expand = expansion(mult = c(0,.4))) +
-    guides(color = guide_legend(override.aes = list(fill = gmri_cols("lv orange")))) +
+    scale_y_continuous(expand = expansion(mult = c(0,.2))) +
+    guides(color = guide_legend(override.aes = list(fill = "#ea4f12"))) +
     theme_plot() +
     labs(
       title = "Habitat Preferences with Projected Climate Conditions", 
