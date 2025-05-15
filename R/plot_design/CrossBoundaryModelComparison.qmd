@@ -41,6 +41,13 @@ land_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "nw_atlantic_
 hague_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hagueline_crs32619.geojson"))
 
 
+# Need to get an area per region...number of cells per region
+all_regs <- bind_rows(dfo_bounds, nmfs_bounds) |>
+  mutate(area = st_area(geometry)) %>% 
+  rename(jurisdiction = Region)
+all_regs$area<- set_units(all_regs$area, km^2)
+
+
 ```
 
 
@@ -159,6 +166,26 @@ dens_ind_range <- sd_vast$Report$Range_raw2 # density independent range
 Each VAST model is estimating a common suite of terms which we can check and investigate across species. Every model will have the following three statistical relationships:
  * Long-term spatial autocorrelation random effect. Adjusts presence/absence and density estimates by location
  * Seasonal adjustments
+ 
+```{r}
+#| label: jurisdiction map
+
+
+ggplot() + 
+  geom_sf(data = all_regs, aes(fill = jurisdiction)) + 
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf) +
+  scale_fill_manual(values = c("#F8766D","#009E73")) +
+  theme_map() +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "Cross-Boundary Regions",
+    fill = "National Jurisdiction")
+```
+
 
 ### VAST Spatial Random Effect Terms
 
@@ -394,241 +421,6 @@ test_prefs %>%
 
 The code below digs into how Andrew Actually accomplished extracting these details from the VAST models. Its a bit much for this workup...
 
-```{r}
-#| label: aja covariate extraction function
-
-# get_vast_covariate_effects <- function(
-#     vast_fit, 
-#     params_plot, 
-#     params_plot_levels, 
-#     effects_pad_values, 
-#     nice_category_names, 
-#     out_dir, 
-#     ...) {
-#   
-#   if (FALSE) {
-#     tar_load(vast_fit)
-#     params_plot <- c(
-#       "Depth", "SST_seasonal", "BT_seasonal",
-#       "SS_seasonal", "BS_seasonal"
-#     )
-#     params_plot_levels <- 100
-#     effects_pad_values <- c(1)
-#     nice_category_names <- nice_category_names
-#     out_dir <- paste0(res_root, "tables")
-# 
-#     vast_fit = mod_comp_res$Fitted_Mod[[1]]
-#     params_plot = c("index")
-#     params_plot_levels = 100
-#     effects_pad_values = c(1)
-#     nice_category_names = "Capelin"
-#   }
-#   assign(
-#     "covariate_data_full", 
-#     vast_fit$effects$covariate_data_full, 
-#     envir = .GlobalEnv)
-#   assign(
-#     "catchability_data_full", 
-#     vast_fit$effects$catchability_data_full, 
-#     envir = .GlobalEnv)
-#   x1_rescale <- function(x) plogis(x)
-#   x2_rescale <- function(x) exp(x)
-#   
-#   for (i in seq_along(params_plot)) {
-#     if (any(grepl(params_plot[i], labels(terms(vast_fit$X1_formula))))) {
-#       pred_dat_temp_X1 <- data.frame(
-#         Effect.fit_model_aja(
-#           focal.predictors = params_plot[i], 
-#           mod = vast_fit, 
-#           which_formula = "X1", 
-#           xlevels = params_plot_levels, 
-#           pad_values = effects_pad_values)) %>%
-#         mutate(., Lin_pred = "X1")
-#     }
-#     
-#     if(any(grepl(params_plot[i], labels(terms(vast_fit$X2_formula))))){
-#       pred_dat_temp_X2 <- data.frame(
-#         Effect.fit_model_aja(
-#           focal.predictors = params_plot[i], 
-#           mod = vast_fit, 
-#           which_formula = "X2", 
-#           xlevels = params_plot_levels, 
-#           pad_values = effects_pad_values)) %>% 
-#       mutate(., Lin_pred = "X2")
-#     }
-#     
-#     if(exists("pred_dat_temp_X1") & !exists("pred_dat_temp_X2")){
-#       pred_dat_out_temp <- pred_dat_temp_X1
-#       rm(pred_dat_temp_X1)
-#     }
-#     if(!exists("pred_dat_temp_X1") & exists("pred_dat_temp_X2")){
-#       pred_dat_out_temp <- pred_dat_temp_X2
-#       rm(pred_dat_temp_X2)
-#     }
-#     if(exists("pred_dat_temp_X1") & exists("pred_dat_temp_X2")) {
-#       pred_dat_out_temp <- bind_rows(pred_dat_temp_X1, pred_dat_temp_X2)
-#       rm(pred_dat_temp_X1)
-#       rm(pred_dat_temp_X2)
-#     }
-#     
-#     if (i == 1) {
-#       pred_dat_out <- pred_dat_out_temp
-#     } else {
-#       pred_dat_out <- bind_rows(pred_dat_out, pred_dat_out_temp)
-#     }
-#   }
-#   pred_dat_out <- pred_dat_out %>%
-#     pivot_longer(., !c(fit, se, lower, upper, Lin_pred), names_to = "Covariate", values_to = "Value") %>%
-#     drop_na()
-#   saveRDS(pred_dat_out, file = paste(out_dir, "/", nice_category_names, "_covariate_effects.rds", sep = ""))
-#   return(pred_dat_out)
-# }
-```
-
-
-```{r}
-#| label: extracting covariates function
-
-# Effect.fit_model_aja <- function(
-#     focal.predictors, 
-#     mod, 
-#     which_formula = "X1", 
-#     pad_values = c(), ...) {
-#   
-#   if (FALSE) {
-#     tar_load(vast_fit)
-#     focal.predictors <- c("Depth", "SST_seasonal", "BT_seasonal")
-#     mod <- fit_base
-#     which_formula <- "X1"
-#     xlevels <- 100
-#     pad_values <- c(0)
-# 
-#     covariate_data_full <- mod$effects$covariate_data_full
-#     catchability_data_full <- mod$effects$catchability_data_full
-#   }
-# 
-#   # Error checks
-#   if (mod$data_list$n_c > 1 & which_formula %in% c("X1", "X2")) {
-#     stop("`Effect.fit_model` is not currently designed for multivariate models using density covariates")
-#   }
-#   if (!all(c("covariate_data_full", "catchability_data_full") %in% ls(.GlobalEnv))) {
-#     stop("Please load `covariate_data_full` and `catchability_data_full` into global memory")
-#   }
-#   if (!requireNamespace("effects")) {
-#     stop("please install the effects package")
-#   }
-#   if (!("effects" %in% names(mod))) {
-#     stop("`effects` slot not detected in input to `Effects.fit_model`. Please update model using later package version.")
-#   }
-# 
-#   # Identify formula-specific stuff
-#   if (which_formula == "X1") {
-#     formula_orig <- mod$X1_formula
-#     parname <- "gamma1_cp"
-#     mod$call <- mod$effects$call_X1
-#     
-#   } else if (which_formula == "X2") {
-#     formula_orig <- mod$X2_formula
-#     parname <- "gamma2_cp"
-#     mod$call <- mod$effects$call_X2
-#     
-#   } else if (which_formula == "Q1") {
-#     formula_orig <- mod$Q1_formula
-#     parname <- "lambda1_k"
-#     mod$call <- mod$effects$call_Q1
-#   } else if (which_formula == "Q2") {
-#     formula_orig <- mod$Q2_formula
-#     parname <- "lambda2_k"
-#     mod$call <- mod$effects$call_Q2
-#   } else {
-#     stop("Check `which_formula` input")
-#   }
-# 
-#   # Extract parameters / covariance
-#   whichnum <- which(names(mod$parameter_estimates$par) == parname)
-#   mod$parhat <- mod$parameter_estimates$par[whichnum]
-#   if (is.null(mod$parameter_estimates$SD$cov.fixed)) {
-#     mod$covhat <- array(0, dim = rep(length(mod$parhat), 2))
-#   } else {
-#     mod$covhat <- mod$parameter_estimates$SD$cov.fixed[whichnum, whichnum, drop = FALSE]
-#   }
-# 
-#   # # Fill in values that are mapped off
-#   # if(parname %in% names(mod$tmb_list$Obj$env$map)){
-#   #   mod$parhat = mod$parhat[mod$tmb_list$Obj$env$map[[parname]]]
-#   #   mod$covhat = mod$covhat[mod$tmb_list$Obj$env$map[[parname]], mod$tmb_list$Obj$env$map[[parname]], drop = FALSE]
-#   #   mod$parhat = ifelse(is.na(mod$parhat), 0, mod$parhat)
-#   #   mod$covhat = ifelse(is.na(mod$covhat), 0, mod$covhat)
-#   # }
-# 
-#   # add names
-#   names(mod$parhat)[] <- parname
-#   if (length(pad_values) != 0) {
-#     parhat <- rep(NA, length(mod$parhat) + length(pad_values))
-#     parhat[setdiff(1:length(parhat), pad_values)] <- mod$parhat
-#     covhat <- array(NA, dim = dim(mod$covhat) + rep(length(pad_values), 2))
-#     covhat[setdiff(1:length(parhat), pad_values), setdiff(1:length(parhat), pad_values)] <- mod$covhat
-#     mod$parhat <- ifelse(is.na(parhat), 0, parhat)
-#     mod$covhat <- ifelse(is.na(covhat), 0, covhat)
-#     # parname = c("padded_intercept", parname)
-#   }
-#   # rownames(mod$covhat) = colnames(mod$covhat) = names(mod$parhat)
-# 
-#   # Augment stuff
-#   formula_full <- stats::update.formula(formula_orig, linear_predictor ~ . + 0)
-#   mod$coefficients <- mod$parhat
-#   mod$vcov <- mod$covhat
-#   mod$formula <- formula_full
-#   mod$family <- stats::gaussian(link = "identity")
-# 
-#   if (FALSE) {
-#     Tmp <- model.matrix(formula_full, data = fit$effects$catchability_data)
-#   }
-#   
-#   
-#   # Functions for package
-#   family.fit_model <- function(x, ...) x$family
-#   vcov.fit_model <- function(x, ...) x$vcov
-# 
-#   # dummy functions to make Effect.default work
-#   dummyfuns <- list(variance = function(mu) mu, initialize = expression(mustart = y + 0.1), dev.resids = function(...) stats::poisson()$dev.res(...))
-# 
-#   # Replace family (for reasons I don't really understand)
-#   fam <- mod$family
-#   for (i in names(dummyfuns)) {
-#     if (is.null(fam[[i]])) fam[[i]] <- dummyfuns[[i]]
-#   }
-# 
-#   # allow calculation of effects ...
-#   if (length(formals(fam$variance)) > 1) {
-#     warning("overriding variance function for effects: computed variances may be incorrect")
-#     fam$variance <- dummyfuns$variance
-#   }
-# 
-#   # Bundle arguments
-#   args <- list(call = mod$call, coefficients = mod$coefficients, vcov = mod$vcov, family = fam, formula = formula_full)
-# 
-#   # Do call
-#   effects::Effect.default(focal.predictors, mod, ..., sources = args)
-# }
-
-```
-
-
-```{r}
-#| label: using Andrews extraction
-
-# get_vast_covariate_effects(
-#   vast_fit = sd_vast, 
-#   params_plot = c("Depth", "SST_seasonal", "BT_seasonal"), 
-#   params_plot_levels = 100, 
-#   effects_pad_values = c(1), 
-#   nice_category_names = "Spiny dogfish", out_dir = paste0(fold_path, ""))
-
-```
-
-
-
 
 # VAST Post-Processing of Density Estimates
 
@@ -800,6 +592,52 @@ lob_baselines %>%
   labs(fill = "Baseline Biomass CPUE kg/km2")
 ```
 
+## Jurisdictional Timeseries
+
+```{r}
+#####
+## Biomass time series
+#####
+
+# Average density within each region per time step
+res_summ <- lob_projections |>
+    group_by(season, year, Date, jurisdiction) |>
+    summarize("mean_biomass" = mean(proj_biomass_mean)) %>% 
+  filter(is.na(jurisdiction) == FALSE)
+
+# Join, calculate total area
+res_summ <- res_summ |>
+    left_join(all_regs, by = c("jurisdiction")) |>
+    mutate("Biomass_Total" = drop_units(exp(mean_biomass)*area))
+
+
+
+
+ggplot() +
+  geom_vline(xintercept = 2023, lty = "dashed") +
+  geom_line(
+    data = res_summ, 
+    aes(x = year, 
+        y = Biomass_Total, 
+        color = jurisdiction), 
+    lwd = 1) +
+  geom_vline(xintercept = 2023, lty = "dashed") +
+  # geom_hline(data = bio_clim, aes(yintercept = mean)) +
+  scale_color_manual(values = c("#F8766D", "#009E73")) + 
+  labs(x = "Year", y = "Relative Biomass Index") +
+  scale_y_continuous(
+    transform = transform_log10(),
+    labels = label_log(base = 10)) +
+  facet_wrap(~season, nrow = 2) +
+  theme_bw()
+
+
+
+ts_out<- ts / reg_plot + 
+  plot_layout(widths = c(1, 0.9), height = c(1, 0.9))
+```
+
+
 
 
 
@@ -923,7 +761,7 @@ lob_comparisons %>%
 
 
 
-## Change from Baseline Bars
+## Change from Baseline Bars/Ranges
 
 For these we will have the outputs from two models, so I am going to reshape the data and treat the juvenile lobster densities as one model and the adult lobster densities as another.
 
@@ -933,8 +771,148 @@ y = year with jurisdiction offset
 
 
 ```{r}
-lob_projections
+# Average density within each region per time step
+period_summ <- lob_projections |>
+    mutate(
+      period = case_when(
+        year %in% c(2004:2023) ~ "base",
+        year %in% c(2046:2055) ~ "mid",
+        year %in% c(2091:2100) ~ "end",
+        TRUE ~ "drop"
+      )) %>% 
+    filter(period != "drop") %>% 
+    group_by(model_group, season, period, jurisdiction) |>
+    summarize(
+      "mean_biomass" = mean(proj_biomass_mean),
+      .groups = "drop") %>% 
+  filter(is.na(jurisdiction) == FALSE)  |>
+  # Join, calculate total area
+  left_join(all_regs, by = c("jurisdiction")) |>
+  mutate("Biomass_Total" = drop_units(exp(mean_biomass)*area)) %>% 
+  select(-c(geometry, area))
+
+# Reshape
+period_differences <- period_summ %>% 
+  select(-mean_biomass) %>% 
+  pivot_wider(names_from = period, values_from = Biomass_Total) %>% 
+  mutate(mid_change = mid - base,
+         end_change = end - base,
+         mid_change_percent = mid_change/base,
+         end_change_percent = end_change/base,
+         #season = fct_rev(season),
+         scenario = "SSP5: 8.5")
 ```
+
+
+```{r}
+library(ggchicklet)
+library(ggh4x)
+
+
+# Build a Plot
+ggplot(period_differences) +
+  geom_vline(xintercept = 0) +
+  geom_point(aes(mid_change_percent, y = season, color = model_group),
+             size = 2) +
+  scale_x_continuous(labels = label_percent()) +
+  scale_color_gmri() +
+  theme_classic() +
+  facet_grid(scenario~.) +
+  labs(
+    x = "Change in Biomass",
+    y = "Season")
+
+#---------
+
+# Initial Thoughts, I think I may want actuall Biomass?
+# but even if I don't I think I want the different periods on their own lines
+# lets try chicklets
+
+
+# Do some major reshaping
+chicklet_prep <- period_differences %>% 
+  select(-c(base, mid, mid_change, end, end_change)) %>% 
+  pivot_longer(
+    cols = ends_with("percent"), 
+    names_to = "period", 
+    values_to = "percent_change") %>% 
+  mutate(model_group = if_else(
+    model_group == "Juvenile Lobsters", 
+    "env_only", 
+    "vast"),
+    bar_y = if_else(
+      str_detect(period, "mid"), 1.1, 1),
+    period_label = if_else(
+      str_detect(period, "mid"), "Mid-Century", "Turn of the Century"),
+    period_alpha = if_else(
+      str_detect(period, "mid"), 1, 0.7)) %>%
+  pivot_wider(
+    names_from = model_group, 
+    values_from = "percent_change") %>% 
+  mutate(label_x = (env_only + vast)/2)
+
+#chicky_points <- period_differences %>% 
+  
+# Plot that
+bar_height <- 0.025
+ggplot(chicklet_prep) +
+  geom_vline(xintercept = 0, linewidth = 0.8, color = "gray60") +
+  ggchicklet:::geom_rrect(
+    aes(
+      xmin = vast,
+      xmax = env_only, 
+      ymin = bar_y - bar_height, 
+      ymax = bar_y + bar_height, 
+      fill = period_label,
+      alpha = I(period_alpha)),
+    #alpha = 1,
+    r = unit(0.45, 'npc')) +
+  # geom_point(
+  #   data = chicklet_prep,
+  #   aes(x = env_only, y = bar_y),
+  #   fill = "white", color= "black", shape = 21, size = 3) +
+  # geom_point(
+  #   data = chicklet_prep,
+  #   aes(x = vast, y = bar_y),
+  #   fill = "white", color= "black", shape = 21, size = 3) +
+  facet_nested(
+    #season ~ scenario + jurisdiction#, 
+    #season + jurisdiction ~ scenario #, 
+    jurisdiction + season ~ scenario #, 
+    #nest_line = TRUE, 
+    #scales = "free"
+    ) +
+  scale_x_continuous(limits = c(-1,1), labels = label_percent()) +
+  scale_y_continuous(expand = expansion(mult = c(0.75,0.75))) +
+  theme_gmri() +
+  scale_fill_gmri() +
+  theme(
+    text = element_text(family = "Avenir"),
+    # legend.position = "right",
+    # legend.title.position = "top",
+    legend.position = "top",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold")) +
+  #guides(fill = guide_legend())
+  labs(
+    x = "Biomass Change",
+    fill = "Projection Period", 
+    y = "",
+    title = "Projected Regional Biomass Changes",
+    subtitle = "Percent difference from 2004-2023 Baseline Period")
+  
+
+```
+
+
+```{r}
+# Can we make a legend that explains what the bars mean?
+
+```
+
 
 
 ## Center of Gravity Figure
@@ -943,6 +921,66 @@ For this section I want to use density curves in the margins to capture decadal 
 
 
 
+```{r}
+#| label: sdm_tmb center of gravity
+
+
+
+COGrav<- function(df) {
+    cog_lat<- weighted.mean(df[,"latitude"], w = df[, "proj_biomass_mean"])
+    cog_lon<- weighted.mean(df[,"longitude"], w = df[, "proj_biomass_mean"])
+    
+    cog_out<- data.frame("COGx" = cog_lon, "COGy" = cog_lat)
+    return(cog_out)
+  }
+
+# Estimate center of gravity
+res_cog <- lob_projections |>
+    group_by(model_group, season, year) |>
+    nest() %>% 
+    mutate(
+      ID = row_number(),
+      COG = map(data, ~ COGrav(.x))
+    ) |>
+    # dplyr::select(year, season, COG) |>
+    unnest_wider(COG) %>% 
+  mutate(
+    season = factor(season, levels = c("Spring", "Summer", "Fall")),
+    Decade = year - year %% 10,
+    Decade = factor(Decade, levels = sort(unique(Decade))))
+```
+
+
+```{r}
+#| label: center of gravity timeseries
+
+ggplot() +
+  geom_line(data = res_cog, aes(x = year, y = COGy, color = season), lwd = 1) +
+  scale_color_manual(name = "season", values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  scale_fill_manual(name = "season", values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  xlab("Year") +
+  ylab("Center of Latitude") +
+  facet_grid(model_group~.) +
+  theme_bw()
+```
+
+
+```{r}
+# Map the locations
+res_cog_sf<- st_as_sf(res_cog, coords = c("COGx", "COGy"), crs = 4326)
+ggplot() +
+    geom_sf(data = all_regs, fill = "transparent") +
+    geom_sf(data = res_cog_sf, aes(color = Decade), alpha = 0.7) + 
+    geom_sf(data = land_sf, color = "dark gray", lwd = 0.2, na.rm = TRUE) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+    #coord_sf(xlim = c(-72, -55), ylim = c(40, 48), expand = FALSE) +
+    scale_fill_viridis_c(name = "Center of Gravity") +
+    theme_map() +
+    facet_grid(model_group~season)
+```
 
 
 
@@ -959,17 +997,6 @@ tail(projection_test$COG)
 
 
 
-get_cog_df<- function(df) {
-    if(FALSE){
-      df<- res_out_seas$data[[1]]
-    }
-    
-    cog_lat<- weighted.mean(df[,"Lat"], w = df[, "D_gct"])
-    cog_lon<- weighted.mean(df[,"Lon"], w = df[, "D_gct"])
-    
-    cog_out<- data.frame("Lon" = cog_lon, "Lat" = cog_lat)
-    return(cog_out)
-  }
   
   res_out_seas<- res_out_seas %>% 
     mutate(., "COG" = map(data, get_cog_df))
