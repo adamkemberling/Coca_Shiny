@@ -13,12 +13,17 @@ EDIT: These outputs will be working from SDMTMB results and not VAST. This means
 
 ```{r}
 # Load packages
+library(units)
 library(here)
 library(tidyverse)
 library(gmRi)
 library(sf)
 library(patchwork)
 library(rcartocolor)
+library(ggchicklet)
+library(ggh4x)
+library(ggside)
+
 
 
 # Paths to Box Assets 
@@ -631,10 +636,6 @@ ggplot() +
   facet_wrap(~season, nrow = 2) +
   theme_bw()
 
-
-
-ts_out<- ts / reg_plot + 
-  plot_layout(widths = c(1, 0.9), height = c(1, 0.9))
 ```
 
 
@@ -732,7 +733,7 @@ lob_comparisons %>%
 
 
 ```{r}
-#| label: log ratio map
+#| label: fold change map
 
 
 # Map the fold-change
@@ -776,6 +777,7 @@ period_summ <- lob_projections |>
     mutate(
       period = case_when(
         year %in% c(2004:2023) ~ "base",
+        #year %in% c(2010:2023) ~ "base",
         year %in% c(2046:2055) ~ "mid",
         year %in% c(2091:2100) ~ "end",
         TRUE ~ "drop"
@@ -805,9 +807,6 @@ period_differences <- period_summ %>%
 
 
 ```{r}
-library(ggchicklet)
-library(ggh4x)
-
 
 # Build a Plot
 ggplot(period_differences) +
@@ -865,38 +864,22 @@ ggplot(chicklet_prep) +
       ymax = bar_y + bar_height, 
       fill = period_label,
       alpha = I(period_alpha)),
-    #alpha = 1,
     r = unit(0.45, 'npc')) +
-  # geom_point(
-  #   data = chicklet_prep,
-  #   aes(x = env_only, y = bar_y),
-  #   fill = "white", color= "black", shape = 21, size = 3) +
-  # geom_point(
-  #   data = chicklet_prep,
-  #   aes(x = vast, y = bar_y),
-  #   fill = "white", color= "black", shape = 21, size = 3) +
   facet_nested(
-    #season ~ scenario + jurisdiction#, 
-    #season + jurisdiction ~ scenario #, 
-    jurisdiction + season ~ scenario #, 
-    #nest_line = TRUE, 
-    #scales = "free"
-    ) +
+    jurisdiction + season ~ scenario, 
+    nest_line = TRUE) +
   scale_x_continuous(limits = c(-1,1), labels = label_percent()) +
   scale_y_continuous(expand = expansion(mult = c(0.75,0.75))) +
-  theme_gmri() +
   scale_fill_gmri() +
+  theme_minimal() +
   theme(
     text = element_text(family = "Avenir"),
-    # legend.position = "right",
-    # legend.title.position = "top",
     legend.position = "top",
     legend.title.position = "left",
     axis.text.y = element_blank(),
     legend.title = element_text(size = 12, face = "bold"),
     panel.grid.major.y = element_blank(),
-    strip.text = element_text(family = "Avenir", face = "bold")) +
-  #guides(fill = guide_legend())
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12)) +
   labs(
     x = "Biomass Change",
     fill = "Projection Period", 
@@ -909,13 +892,86 @@ ggplot(chicklet_prep) +
 
 
 ```{r}
+#| label: compare countries chicklets
+
+
+# Do some major reshaping
+chicklet_prep <- period_differences %>% 
+  select(-c(base, mid, mid_change, end, end_change)) %>% 
+  pivot_longer(
+    cols = ends_with("percent"), 
+    names_to = "period", 
+    values_to = "percent_change") %>% 
+  mutate(model_group = if_else(
+    model_group == "Juvenile Lobsters", 
+    "env_only", 
+    "vast"),
+    bar_y = if_else(jurisdiction == "DFO", 1, 1.1),
+     period_label = if_else(
+      str_detect(period, "mid"), "Mid-Century", "Turn of the Century")) %>%
+  pivot_wider(
+    names_from = model_group, 
+    values_from = "percent_change") %>% 
+  mutate(label_x = (env_only + vast)/2)
+
+
+# Plot that
+bar_height <- 0.025
+ggplot(chicklet_prep) +
+  geom_vline(xintercept = 0, linewidth = 0.8, color = "gray60") +
+  ggchicklet:::geom_rrect(
+    aes(
+      xmin = vast,
+      xmax = env_only, 
+      ymin = bar_y - bar_height, 
+      ymax = bar_y + bar_height, 
+      fill = jurisdiction),
+    r = unit(0.45, 'npc')) +
+  geom_point(
+    data = chicklet_prep,
+    aes(x = env_only, y = bar_y, shape = "Environment\nOnly Model"), 
+    size = 3, fill = "white") +
+  geom_point(
+    data = chicklet_prep,
+    aes(x = vast, y = bar_y, shape = "Spatio-Temporal\nModel"), 
+    size = 3, fill = "white") +
+  facet_nested(
+    period_label + season ~ scenario, 
+    nest_line = TRUE) +
+  scale_shape_manual(values = c(21, 24)) +
+  scale_x_continuous(limits = c(-1,1), labels = label_percent()) +
+  scale_y_continuous(expand = expansion(mult = c(0.75,0.75))) +
+  scale_fill_gmri() +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12),
+    legend.box = "Vertical") +
+  labs(
+    x = "Biomass Change",
+    fill = "National Jurisdiction:", 
+    y = "",
+    title = "Projected Regional Biomass Changes",
+    subtitle = "Percent difference from 2004-2023 Baseline Period",
+    shape = "Distribution Model Type:")
+  
+```
+
+
+
+```{r}
 # Can we make a legend that explains what the bars mean?
 
 ```
 
 
 
-## Center of Gravity Figure
+# Center of Gravity Figure
 
 For this section I want to use density curves in the margins to capture decadal scale movements in the centers of gravity
 
@@ -925,14 +981,17 @@ For this section I want to use density curves in the margins to capture decadal 
 #| label: sdm_tmb center of gravity
 
 
-
+# Center of gravity as weighted mean
 COGrav<- function(df) {
-    cog_lat<- weighted.mean(df[,"latitude"], w = df[, "proj_biomass_mean"])
-    cog_lon<- weighted.mean(df[,"longitude"], w = df[, "proj_biomass_mean"])
+    cog_lat<- weighted.mean(
+      df[,"latitude"], 
+      w = exp(df[, "proj_biomass_mean"]))
+    cog_lon<- weighted.mean(
+      df[,"longitude"], 
+      w = exp(df[, "proj_biomass_mean"]))
     
     cog_out<- data.frame("COGx" = cog_lon, "COGy" = cog_lat)
-    return(cog_out)
-  }
+    return(cog_out)}
 
 # Estimate center of gravity
 res_cog <- lob_projections |>
@@ -960,8 +1019,16 @@ ggplot() +
   scale_fill_manual(name = "season", values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
   xlab("Year") +
   ylab("Center of Latitude") +
-  facet_grid(model_group~.) +
-  theme_bw()
+  facet_wrap(~model_group, ncol = 1) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12)) 
 ```
 
 
@@ -969,57 +1036,250 @@ ggplot() +
 # Map the locations
 res_cog_sf<- st_as_sf(res_cog, coords = c("COGx", "COGy"), crs = 4326)
 ggplot() +
-    geom_sf(data = all_regs, fill = "transparent") +
+    #geom_sf(data = all_regs, fill = "transparent") +
     geom_sf(data = res_cog_sf, aes(color = Decade), alpha = 0.7) + 
     geom_sf(data = land_sf, color = "dark gray", lwd = 0.2, na.rm = TRUE) +
+  geom_sf(data = hague_sf, color = "black", linetype = 3) + 
   coord_sf(
-    xlim = c(-182500, 1550000), 
-    ylim = c(3875000, 5370000) , 
-    expand = F, crs = 32619) +
-    #coord_sf(xlim = c(-72, -55), ylim = c(40, 48), expand = FALSE) +
+    xlim = range(res_cog$COGx)+ c(-2,2), 
+    ylim = range(res_cog$COGy) + c(-1,1), 
+    expand = T, crs = 4326) +
     scale_fill_viridis_c(name = "Center of Gravity") +
+    facet_grid(
+      model_group~season, 
+      labeller = labeller(model_group = label_wrap_gen(width = 8))) +
     theme_map() +
-    facet_grid(model_group~season)
+    theme(panel.grid.major  = element_blank()) +
+    guides(color = guide_legend(override.aes = list(shape = 15, size = 5)))
+
 ```
 
 
 ```{r}
 #| label: map with ggmarginal
 
-library(ggExtra)
+
+# Does not work with facets
 
 
-piris <- ggplot(iris, aes(Sepal.Length, Sepal.Width, colour = Species)) +
-  geom_point()
-ggMarginal(piris, groupColour = TRUE, groupFill = TRUE)
+# # library(ggExtra) 
+# cog_map <-  ggplot() +
+#     # geom_sf(data = all_regs, fill = "transparent") +
+#     # geom_sf(data = res_cog_sf, aes(color = Decade), alpha = 0.7) + 
+#     geom_point(data = res_cog, aes(COGx, COGy, color = Decade), alpha = 0.7) + 
+#     # geom_sf(data = land_sf, color = "dark gray", lwd = 0.2, na.rm = TRUE) +
+#     #coord_sf(xlim = c(-72, -55), ylim = c(40, 48), expand = FALSE) +
+#     scale_fill_viridis_c(name = "Center of Gravity") +
+#     facet_grid(
+#       model_group~season, 
+#       labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+#     theme_map() +
+#     theme(panel.grid.major  = element_blank()) +
+#     guides(color = guide_legend(override.aes = list(shape = 15, size = 5)))
+# ggMarginal(cog_map, groupColour = TRUE, groupFill = TRUE)
 ```
+
+
+```{r}
+#| label: COG with ggside
+
+# Does not work with sf, Just use year-round
+library(ggside)
+
+
+# Estimate center of gravity
+res_cog_annual <- lob_projections |>
+    group_by(model_group, year) |>
+    nest() %>% 
+    mutate(
+      ID = row_number(),
+      COG = map(data, ~ COGrav(.x))
+    ) |>
+    # dplyr::select(year, season, COG) |>
+    unnest_wider(COG) %>% 
+  mutate(
+    Decade = year - year %% 10,
+    Decade = factor(Decade, levels = sort(unique(Decade))))
+
+
+# 
+ggplot(res_cog_annual, aes(COGx, COGy, color = Decade)) +
+  geom_point(aes(color = Decade), alpha = 0.9) +
+  geom_xsidedensity(
+    aes(y = after_stat(density), fill = Decade), 
+    position = "dodge", alpha = 0.4) +
+  geom_ysidedensity(
+    aes(x = after_stat(density), fill = Decade), 
+    position = "dodge", alpha = 0.4) +
+  facet_grid(
+    model_group~.,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12)) +
+  theme(panel.grid.major  = element_blank()) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme(ggside.panel.scale = .3) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Lat + Lon Components Displayed as Decadal Distributions",
+    y = "Latitude",
+    x = "Longitude")
+
+```
+
 
 
 
 
 ```{r}
-#| label: simplified COG estimate:
+# Could I put a little flag pole or tick mark where the decadal centers are? Yes
 
-# New file structure
-# Just use these
-# these won't exist after model fit period
-projection_test$Dens 
-tail(projection_test$COG) 
+decadal_cogs <- res_cog_annual %>% 
+  group_by(Decade, model_group) %>% 
+  summarise(across(starts_with("COG"), mean))
 
-
-
-
-  
-  res_out_seas<- res_out_seas %>% 
-    mutate(., "COG" = map(data, get_cog_df))
-  
-  res_out_all<- res_out %>%
-    group_by(., Year) %>%
-    nest() %>%
-    mutate(., "COG" = map(data, get_cog_df),
-           "Season" = "All")
+new_england <- land_sf %>% st_transform(st_crs(4326))
   
   
+ggplot(res_cog_annual) +
+  geom_point(
+    data = res_cog_annual,
+    aes(COGx, COGy, color = Decade), alpha = 0.9) +
+  geom_xsidevline(
+    data = decadal_cogs,
+    aes(xintercept = COGx, color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  geom_ysidehline(
+    data = decadal_cogs,
+    aes(yintercept = COGy, color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  # # Turns off ticks for side axes, not working with sf
+  # scale_xsidey_continuous(
+  #   breaks = NULL, labels = "", expand = expansion(c(0,.1))) +
+  # scale_ysidex_continuous(
+  #   breaks = NULL, labels = "", expand = expansion(c(0,.1)))  +
+  # What about land now?
+  geom_sf(
+    data = new_england, 
+    color = "dark gray", 
+    lwd = 0.2, 
+    na.rm = TRUE) +
+  facet_wrap(
+    ~model_group, ncol = 2,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  # Use scale_x_continuous to zoom, coord_sf is an issue
+  scale_color_carto_d(palette = "Vivid") +
+  scale_x_continuous(
+    limits = range(res_cog_annual$COGx) + c(-2,2)) + 
+  scale_y_continuous(
+    limits = range(res_cog_annual$COGy) + c(-1,1)) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major  = element_blank(),
+    strip.text = element_text(
+      family = "Avenir", face = "bold", size = 12)) +
+  theme(ggside.panel.scale = .05) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Decadal Centerpoints Displayed in Margins",
+    y = "Latitude",
+    x = "Longitude")
+
+
 
 ```
+
+
+```{r}
+
+decadal_cog_ranges <- res_cog_annual %>% 
+  group_by(Decade, model_group) %>% 
+  summarise(
+    across(
+      starts_with("COG"), 
+      .fns = list("min" = min, "max" = max)),
+    .groups = "drop") %>% 
+  mutate(decade_y = rev(as.numeric(Decade)))
+  
+ggplot(res_cog_annual) +
+  geom_point(
+    data = res_cog_annual,
+    aes(COGx, COGy, color = Decade), alpha = 0.9) +
+  geom_xsidesegment(
+    data = decadal_cog_ranges,
+    aes(
+      x = COGx_min, xend = COGx_max, 
+      y = decade_y, yend = decade_y, 
+      color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  geom_ysidesegment(
+    data = decadal_cog_ranges,
+    aes(
+      x = decade_y, xend = decade_y, 
+      y = COGy_min, yend = COGy_max, 
+      color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  geom_sf(
+    data = new_england, 
+    color = "dark gray", 
+    lwd = 0.2, 
+    na.rm = TRUE) +
+  facet_wrap(
+    ~model_group, ncol = 2,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  # Use scale_x_continuous to zoom, coord_sf is an issue
+  #scale_color_carto_d(palette = "Vivid") +
+  scale_color_carto_d(palette = "Mint", direction = -1) +
+  scale_x_continuous(
+    limits = range(res_cog_annual$COGx) + c(-2,2)) + 
+  scale_y_continuous(
+    limits = range(res_cog_annual$COGy) + c(-1,1)) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major  = element_blank(),
+    strip.text = element_text(
+      family = "Avenir", face = "bold", size = 12)) +
+  theme(ggside.panel.scale = .1) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Decadal Centerpoints Displayed in Margins",
+    y = "Latitude",
+    x = "Longitude")
+
+```
+
+
 
