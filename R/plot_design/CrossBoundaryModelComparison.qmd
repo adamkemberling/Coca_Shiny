@@ -983,6 +983,18 @@ ggplot() +
 ```
 
 
+```{r}
+#| label: map with ggmarginal
+
+library(ggExtra)
+
+
+piris <- ggplot(iris, aes(Sepal.Length, Sepal.Width, colour = Species)) +
+  geom_point()
+ggMarginal(piris, groupColour = TRUE, groupFill = TRUE)
+```
+
+
 
 
 ```{r}
