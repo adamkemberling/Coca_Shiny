@@ -386,7 +386,6 @@ ssp_difference_map <- function(dist_df, reactive = F, range_shift = T){  # Color
   # Can we automatically set some scale for the color limits?
   col_lims <- c(-1,1) * quantile(abs(density_sf$val_diff), probs = c(0.85), na.rm = T)
   
-  
   # Make the map - Log Differences
   diff_m <- ggplot() 
   

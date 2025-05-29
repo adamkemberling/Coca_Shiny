@@ -15,6 +15,7 @@
 
 # load the data 
 pref_data <- read_csv(here::here("Coca_SDM_app_dev/app_ready_data/preference_curve_data.csv")) %>% split(.$comname)
+# processed in sdm_workflow/cmip6_processing/temperature_milestone_cnditions.ipynb
 env_condition_data <- read_csv(here::here("Coca_SDM_app_dev/app_ready_data/projected_environmental_conditions.csv"))
 
 # Split the preference data by species

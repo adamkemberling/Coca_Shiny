@@ -1,0 +1,1285 @@
+---
+title: "Cross Boundary Plot Development"
+format: 
+  html:
+    self-contained: true
+---
+
+# Model Evaluation for Cross Boundary
+
+The following sections will cover how to pull out common diagnostics from VAST model outputs and some data visualization development for cross boundary metrics for US and Canadian population densities.
+
+EDIT: These outputs will be working from SDMTMB results and not VAST. This means I will also be demoing new post-processing code.
+
+```{r}
+# Load packages
+library(units)
+library(here)
+library(tidyverse)
+library(gmRi)
+library(sf)
+library(patchwork)
+library(rcartocolor)
+library(ggchicklet)
+library(ggh4x)
+library(ggside)
+
+
+
+# Paths to Box Assets 
+mills_path <- cs_path(box_group = "mills")
+coca_path <- str_c(mills_path, "Projects/COCA19_Projections/")
+projections_path <- paste0(coca_path, "projections/")
+mods_path <- paste0(coca_path, "mod_fits/")
+
+
+# Hexagon grid
+hex_grid <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hex_grid.geojson"))
+
+
+# Load the shapefiles
+dfo_bounds <- read_sf(here::here("local_data/Regions_for_CRSBND/DFO.shp"))
+nmfs_bounds <- read_sf(here::here("local_data/Regions_for_CRSBND/NMFS.shp"))
+land_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "nw_atlantic_countries_crs32619.geojson"))
+
+# Load the Hague Lines
+hague_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hagueline_crs32619.geojson"))
+
+
+# Need to get an area per region...number of cells per region
+all_regs <- bind_rows(dfo_bounds, nmfs_bounds) |>
+  mutate(area = st_area(geometry)) %>% 
+  rename(jurisdiction = Region)
+all_regs$area<- set_units(all_regs$area, km^2)
+
+
+```
+
+
+```{r}
+#| label: map theme
+
+# Plotting map theme
+theme_map <- function(fontfam = "Avenir", guides = T, ...){
+  list(
+    # Theme options, with ellipse to add more
+    theme(
+      # Font across all text
+      text = element_text(family = "Avenir"),
+      
+      # Titles + Text
+      plot.title = element_text(hjust = 0, face = "bold", size = 20),
+      plot.subtitle = element_text(size = 18),
+      legend.title = element_text(size = 16, lineheight = 1.75),
+      legend.text = element_text(size = 14), 
+      legend.spacing.y = unit(1.75, "lines"),
+      
+      # Grids and Axes
+      panel.background = element_blank(), 
+      panel.border = element_rect(color = "black", fill = "transparent"), 
+      panel.grid.major = element_line(color = "gray80"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.ticks=element_blank(),
+      plot.margin = margin(t = 1, r = 1, b = 1, l = 1, unit = "pt"),
+      #legend.position = c(.725, .125), 
+      legend.background = element_rect(color = "transparent", fill = "white", linewidth = 0.25),
+      # Facets
+      strip.background = element_rect(
+        fill      = "#00736D", 
+        color = "white"),
+      strip.text = element_text(
+        color     = "white", 
+        face      = "bold",
+        size      = 12,
+        family    = fontfam),
+      legend.position = "bottom",
+      
+      # Use ellipses for tweaks on the fly:
+      ...))
+}
+
+```
+
+
+```{r}
+#| label: sf mesh making
+
+
+# This was found in Create_Mesh_from_Knots.R
+sf_meshify <- function(input_df, coords = c("Lon", "Lat"), length_km = 25, in_crs = 4326, trans_crs = 32619, square = T){
+  
+  # Make the dataframe an sf class using coordinates
+  in_sf <- st_as_sf(input_df, coords = coords, crs = in_crs, remove = F) %>% 
+    # Transform it to a crs that is projected in meters
+    st_transform(crs = trans_crs)
+  
+  # If we are getting gaps we can buffer here, or up the mesh size
+  
+  
+  # Use that data to define a grid with dimensions of length_km*length_km
+  sf_grid <- st_make_grid(
+    x = in_sf,
+    cellsize = c(length_km*1000, length_km*1000), 
+    what = "polygons", 
+    square = square) %>% 
+    # Make the grid an sf class
+    st_as_sf() 
+  
+  # Use the original data to trim it so its just cells that overlap the points
+  sf_out <- sf_grid %>% 
+    st_filter(in_sf, .predicate = st_contains) %>%
+    st_as_sf() 
+  
+  # Join the clipped grid to the dataset
+  sf_out <- st_join(sf_out, in_sf, join = st_intersects)
+  # Return the results  
+  return(sf_out)
+  
+}
+
+```
+
+
+
+```{r}
+#| label: loading COCA VAST Models
+
+# Loading the VAST Models
+mod_list <- setNames(
+  list.files(mods_path, pattern = ".rds", full.names = T),
+  str_remove(list.files(mods_path, pattern = ".rds"), ".rds"))
+
+# Load a random model
+mod_test <- readRDS(mod_list[[2]])
+
+# OR, use haddock / spiny dogfish as an example 
+had_vast <- read_rds(str_c(mods_path, "Haddock_full_fitted_vast.rds"))
+sd_vast <- read_rds(str_c(mods_path, "SpinyDogfish_full_fitted_vast.rds"))
+
+# Get some details on the range parameters
+dens_dep_range <- sd_vast$Report$Range_raw1 # density dependent range
+dens_ind_range <- sd_vast$Report$Range_raw2 # density independent range
+
+```
+
+
+
+
+# VAST Model Diagnostics
+
+Each VAST model is estimating a common suite of terms which we can check and investigate across species. Every model will have the following three statistical relationships:
+ * Long-term spatial autocorrelation random effect. Adjusts presence/absence and density estimates by location
+ * Seasonal adjustments
+ 
+```{r}
+#| label: jurisdiction map
+
+
+ggplot() + 
+  geom_sf(data = all_regs, aes(fill = jurisdiction)) + 
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf) +
+  scale_fill_manual(values = c("#F8766D","#009E73")) +
+  theme_map() +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "Cross-Boundary Regions",
+    fill = "National Jurisdiction")
+```
+
+
+### VAST Spatial Random Effect Terms
+
+
+```{r}
+#| label: Isolate Model Details
+
+# Pull out the spatial random effect informaion
+spat_grid <- bind_cols(
+  data.frame(sd_vast$spatial_list$latlon_s), # Knot Coordinates
+  data.frame("Presence_Absence" = sd_vast$Report$Omegainput1_sf), # Presence Absence Random Effect
+  data.frame("Density" = sd_vast$Report$Omegainput2_sf)) %>%  # Density Random Effect
+  pivot_longer(cols = -c(1,2), names_to = "omega", values_to = "omega_val") %>% 
+  st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F)
+
+
+#----- Mapping the Knots themselves  ------
+
+# # Presence Absence
+# p1_map <- spat_grid %>% 
+#   dplyr::filter(omega == "Presence_Absence") %>% 
+#   ggplot() +
+#   geom_sf(aes(color = omega_val), size = 0.8) +
+#   facet_wrap(~omega) +
+#   scale_color_distiller(palette = "RdBu") +
+#   theme_dark() +
+#   theme(legend.title.position = "top", legend.title = element_text(hjust = 0.5)) +
+#   labs(color = "Presence/Absence Random Effect")
+# 
+# 
+# 
+# # Density
+# p2_map <- spat_grid %>% 
+#   filter(omega == "Density") %>% 
+#   ggplot() +
+#   geom_sf(aes(color = omega_val), size = 0.8) +
+#   facet_wrap(~omega) +
+#   scale_color_distiller(palette = "RdBu") +
+#   theme_dark() +
+#   theme(legend.title.position = "top", legend.title = element_text(hjust = 0.5),) +
+#   labs(color = "Abundance Density Random Effect")
+# 
+# 
+# p1_map / p2_map
+```
+
+
+```{r}
+# This was an unnecessary exercise, knots are not where distribution data is located
+
+#------- Mapping with the hex_grid
+
+
+# Make a hex mesh from the know coordinates
+knot_hex_grid <-  sf_meshify(input_df = distinct(spat_grid, Lon, Lat), square = F, length_km = 35)
+```
+
+
+```{r}
+p1_map <- spat_grid %>% 
+  st_drop_geometry() %>% 
+  dplyr::filter(omega == "Presence_Absence") %>% 
+  # Join the hexagon mesh
+  left_join(knot_hex_grid, by = join_by(Lon, Lat)) %>%
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = omega_val)) +
+  facet_wrap(~omega) +
+  scale_fill_distiller(palette = "RdBu") +
+  theme_dark() +
+  theme(legend.title.position = "top", legend.title = element_text(hjust = 0.5),) +
+  labs(fill = "Presence/Absence Random Effect")
+
+p2_map <- spat_grid %>% 
+  st_drop_geometry() %>% 
+  filter(omega == "Density") %>% 
+  # Join the hexagon mesh
+  left_join(knot_hex_grid, by = join_by(Lon, Lat)) %>%
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = omega_val)) +
+  facet_wrap(~omega) +
+  scale_fill_distiller(palette = "RdBu") +
+  theme_dark() +
+  theme(legend.title.position = "top", legend.title = element_text(hjust = 0.5),) +
+  labs(fill = "Abundance Density Random Effect")
+
+
+p1_map / p2_map + plot_annotation(title = "Spiny Dogfish Spatial Random Effects")
+
+```
+
+
+### VAST Seasonal Fixed Effects
+
+
+```{r}
+# Sseasonal
+season_spat <- bind_cols(
+  data.frame(sd_vast$spatial_list$latlon_s), # Knot Coordinates
+  sd_vast$Report$Xi1_scp[,,1],
+  sd_vast$Report$Xi1_scp[,,2],
+  sd_vast$Report$Xi1_scp[,,3]) %>% 
+  setNames(c("Lat", "Lon", "Spring", "Summer", "Fall")) %>% 
+  pivot_longer(cols = -c(1,2), names_to = "season", values_to = "coef") %>% 
+  mutate(season = factor(season, levels = c("Spring", "Summer", "Fall")))
+
+
+
+season_spat %>% # Join the hexagon mesh
+  left_join(knot_hex_grid, by = join_by(Lon, Lat)) %>%
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = coef)) +
+  facet_wrap(~season, ncol = 2) +
+  scale_fill_distiller(palette = "RdBu") +
+  theme_dark() +
+  theme(legend.title.position = "top", legend.title = element_text(hjust = 0.5)) +
+  labs(title = "Spiny Dogfish Seasonal Intercept Coefficients")
+
+```
+
+
+### Temperature + Depth Fixed Effects
+
+These models contain three environmental covariates: surface temperature, bottom temperature, and depth. Each of these covariates will have an associated preference curve showing how species cpue changes along a continuous range of these values.
+
+```{r}
+#| label: load pre-processed preference informatiopn
+
+pref_path <- cs_path("mills", "Projects/COCA19_projections/tables")
+pref_names <- list.files(
+  pref_path, 
+  pattern = "full_covariate_effects.rds") %>% 
+  str_remove_all("_full_covariate_effects.rds") %>% 
+  tolower()  
+pref_dat <- map(
+  list.files(pref_path, pattern = "full_covariate_effects.rds", 
+             full.names = T), 
+  read_rds) %>% 
+  setNames(pref_names)
+
+
+# Grand means for re-scaling
+rescale_df <- tribble(
+  ~"Covariate",   ~"gmean",  ~"gsd",
+  "Depth",         123.47,   100.2,
+  "SST_seasonal",  11.11,    4.55,
+  "BT_seasonal",   7,        2.72
+)
+
+
+
+
+# Fix Species names:
+name_fix <- tribble(
+  ~"species",              ~"comname",
+  "atlanticmackerel",      "Atlantic mackerel",              
+  "butterfish",            "butterfish",     
+  "blackseabass",          "black sea bass",
+  "cod",                   "Atlantic cod",              
+  "haddock",               "haddock",             
+  "hagfish",               "hagfish",                
+  "halibut",               "halibut",                
+  "herring",               "herring",               
+  "jonahcrab",             "Jonah crab",                
+  "littleskate",           "little skate",                
+  "lobster",               "American lobster",               
+  "longfinsquid",          "longfin squid",                
+  "monkfish",              "monkfish",                
+  "northernsandlance",     "northern sandlance",               
+  "oceanquahog",           "ocean quahog",                
+  "pollock",               "pollock",                
+  "reddeepseacrab",        "red deepsea crab",
+  "redfish",               "acadian redfish",
+  "redhake",               "red hake",                
+  "rockcrab",              "rock crab",               
+  "scallop",               "scallop",              
+  "scup",                  "scup",               
+  "shortfinsquid",         "shortfin squid",               
+  "silverhake",            "silver hake",              
+  "smoothskate",           "smooth skate",               
+  "spinydogfish",          "spiny dogfish",               
+  "summerflounder",        "summer flounder",              
+  "thornyskate",           "thorny skate",               
+  "whitehake",             "white hake",               
+  "windowpaneflounder",    "windowpane flounder",              
+  "winterflounder",        "winter flounder",               
+  "winterskate",           "winter skate",                
+  "witchflounder",         "witch flounder",              
+  "yellowtailflounder",    "yellowtail flounder"             
+)
+
+
+
+# Put them all  in one table, fix the species names
+pref_all <- pref_dat %>% 
+  bind_rows(.id = "species") %>% 
+  left_join(rescale_df) %>% 
+  left_join(name_fix) %>% 
+  pivot_wider(names_from = Lin_pred, values_from = c(fit, se, lower, upper), names_sep = "_") %>% 
+  mutate(
+    val_actual = (Value * gsd) + gmean,
+    fit_exp = exp(fit_X1 + fit_X2),
+    up_exp  = exp(upper_X1 + upper_X2),
+    low_exp = exp(lower_X1 + lower_X2),
+    variable = case_when(
+      Covariate == "SST_seasonal" ~ "Surface Temperature",
+      Covariate == "BT_seasonal" ~ "Bottom Temperature",
+      TRUE ~ "Depth"))
+
+
+
+# Inspect
+glimpse(pref_all)
+test_prefs <- filter(pref_all, comname == "spiny dogfish")
+test_prefs %>% 
+  ggplot() +
+  geom_area(aes(val_actual, y = fit_exp, group = comname), alpha = 0.4, fill = gmri_cols("blue economy teal")) +
+  geom_line(aes(val_actual, fit_exp, group = comname), linewidth = 1) +
+  facet_wrap(.~variable, scales = "free", ncol = 2) +
+  scale_color_gmri() +
+  guides(linetype = guide_legend(title.position = "top", title.hjust = 0.5),
+         color = guide_legend(title.position = "top", title.hjust = 0.5)) +
+  theme_minimal() +
+  labs(
+    x = "Covariate Value", 
+    title = "Spiny Dogfish Preferences", 
+    color = "Average Regional Condition",
+    linetype = "SSP Scenario",
+    y = "Predicted kg/km2")
+```
+
+The code below digs into how Andrew Actually accomplished extracting these details from the VAST models. Its a bit much for this workup...
+
+
+# VAST Post-Processing of Density Estimates
+
+```{r}
+# Load the Projections / Model Outputs - Raw
+
+# I hate nested dataframes, so I'm just going to use a list at each step:
+read_rds_func <- function(file_name) {
+    out <- readRDS(paste0(file_name))
+    return(out)}
+
+# Loads all Files in the folder that end with _mean.rds
+fpaths     <- list.files(projections_path, pattern = "_mean.rds", full.names = TRUE)
+fnames     <- str_remove(list.files(projections_path, pattern = "_mean.rds", full.names = FALSE, ), ".rds")
+proj_files <- setNames(fpaths, fnames)
+
+
+# Read each dataset into a list or a tester
+projection_list <- map(proj_files, read_rds_func)
+projection_test <- read_rds_func(proj_files["SpinyDogfish_full_CMIP6_SSP5_85_mean"])
+
+#### 2. Isolate the Biomass Density Information ####
+
+# For now, we are mostly going to be using the results in the "Dens" object to make our maps 
+# and then also for cropping with community footprints to get our summaries of change. 
+# Let's pull out the density results as a new column
+
+ # Isolate just the density information
+density_estimates <- projection_list %>% map(~pluck(.x, "Dens"))
+density_test <- density_estimates[["SpinyDogfish_full_CMIP6_SSP5_85_mean"]] %>% 
+  mutate(season = case_match(
+    month(Time), 
+    3 ~ "Spring",
+    7 ~ "Summer", 
+    10  ~ "Fall"),
+    season = factor(season, levels = c("Spring", "Summer", "Fall"))) %>% 
+  ungroup()
+```
+
+
+### Mapping VAST Projections
+
+```{r}
+#| label: new mesh and plot
+
+
+# Make a hex mesh from the know coordinates
+predictions_hex_grid <-  sf_meshify(input_df = distinct(density_test, Lon, Lat), square = F, length_km = 35) 
+
+
+# Plot those
+library(scales)
+density_test %>%  
+  filter(year(Time) == 2025) %>%
+  left_join(predictions_hex_grid) %>% st_as_sf() %>% 
+  #st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = F) %>% 
+  ggplot() +
+    geom_sf(aes(fill = Prob_0.5)) +
+    scale_fill_distiller(palette = "RdBu", transform = "log10", labels = label_log()) +
+    facet_wrap(~season, ncol = 2) +
+    theme_dark() +
+    labs(
+      title = "Spiny Dogfish 2025 Projections: SSP5-8.5 Mean Estimate",
+      subtitle = "Vast Density Estimates use the projection grid, not knots")
+ 
+
+```
+
+
+# SDMTMB Results
+
+
+```{r}
+#| label: load Sdmtmb outputs
+
+# Andrew sent three models related to lobster
+lob_juve  <- read_rds(here::here("local_data","Example Projection Files", "juve_projected_biomass.rds"))
+lob_adult <- read_rds(here::here("local_data","Example Projection Files", "adult_projected_biomass.rds"))
+lob_pred  <- read_rds(here::here("local_data","Example Projection Files", "pred_projected_biomass.rds"))
+
+
+lob_projections <- bind_rows(list(
+  "Juvenile Lobsters" = lob_juve,
+  "Adult Lobsters" = lob_adult#,
+  #"Lobster Predators" = lob_pred
+), .id = "model_group") %>% 
+  mutate(
+    season = factor(season, levels = c("Spring", "Summer", "Fall")),
+    model_group = factor(model_group, levels = c("Juvenile Lobsters", "Adult Lobsters", "Lobster Predators"))
+  )
+
+```
+
+
+
+## Proportion in Each Region
+
+For cross-boundary we are interested in differences between US and Canadian study areas.
+
+```{r}
+# What is the proportion of the predicted biomass in each region
+
+# # Do the overlays to assign which region it belongs too
+# dfo_bounds
+# nmfs_bounds
+
+# Get unique Coordinates
+sdm_locations <- distinct(lob_projections, longitude, latitude) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs =4326, remove = F)
+
+# Make a mesh from the sdm locations
+sdm_hex_grid <- sf_meshify(
+  input_df = distinct(lob_projections, Lon = longitude, Lat = latitude), 
+  square = F, 
+  length_km = 35)
+
+# Label which area the points fall within
+dfo_locations <- st_join(sdm_locations, dfo_bounds, join = st_within) %>% 
+  filter(is.na(Region) == FALSE)
+nmfs_locations <- st_join(sdm_locations, nmfs_bounds, join = st_within) %>% 
+  filter(is.na(Region) == FALSE)
+region_labs <- bind_rows(dfo_locations, nmfs_locations) %>% 
+  st_drop_geometry() %>% 
+  rename(jurisdiction = Region)
+
+
+# Add these back in
+lob_projections <- left_join(lob_projections, region_labs)
+
+```
+
+
+
+## Baseline Period Maps
+
+```{r}
+# Get the average cpue over the most recent 20 years
+lob_baselines <- lob_projections %>% 
+  filter(year %in% c(2004:2023)) %>% 
+  group_by(jurisdiction, model_group, season, longitude, latitude) %>% 
+  summarise(
+    baseline_biomass_mean = exp(mean(proj_biomass_mean, na.rm = T)),
+    .groups = "drop")
+
+
+# Map the Baseline Period CPUE
+lob_baselines %>% 
+  rename(Lon = longitude, Lat = latitude) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = baseline_biomass_mean), alpha = 0.75) +
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "RedOr", 
+    transform = "log10",
+    labels = label_number(accuracy = 0.01)) +
+  facet_grid(model_group~season) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(fill = "Baseline Biomass CPUE kg/km2")
+```
+
+## Jurisdictional Timeseries
+
+```{r}
+#####
+## Biomass time series
+#####
+
+# Average density within each region per time step
+res_summ <- lob_projections |>
+    group_by(season, year, Date, jurisdiction) |>
+    summarize("mean_biomass" = mean(proj_biomass_mean)) %>% 
+  filter(is.na(jurisdiction) == FALSE)
+
+# Join, calculate total area
+res_summ <- res_summ |>
+    left_join(all_regs, by = c("jurisdiction")) |>
+    mutate("Biomass_Total" = drop_units(exp(mean_biomass)*area))
+
+
+
+
+ggplot() +
+  geom_vline(xintercept = 2023, lty = "dashed") +
+  geom_line(
+    data = res_summ, 
+    aes(x = year, 
+        y = Biomass_Total, 
+        color = jurisdiction), 
+    lwd = 1) +
+  geom_vline(xintercept = 2023, lty = "dashed") +
+  # geom_hline(data = bio_clim, aes(yintercept = mean)) +
+  scale_color_manual(values = c("#F8766D", "#009E73")) + 
+  labs(x = "Year", y = "Relative Biomass Index") +
+  scale_y_continuous(
+    transform = transform_log10(),
+    labels = label_log(base = 10)) +
+  facet_wrap(~season, nrow = 2) +
+  theme_bw()
+
+```
+
+
+
+
+
+## Change from Baseline Maps
+
+The catch/effort change from one period to another could be compared as either percent change or log ratio (log fold change). Here is what those could look like
+
+```{r}
+# Get averages at some future state
+lob_futures <- lob_projections %>% 
+  filter(year %in% c(2081:2100)) %>% 
+  group_by(jurisdiction, model_group, season, longitude, latitude) %>% 
+  summarise(
+    future_biomass_mean = exp(mean(proj_biomass_mean, na.rm = T)),
+    .groups = "drop")
+
+
+# Combine, difference
+lob_comparisons <- left_join(lob_futures, lob_baselines) %>% 
+  filter(
+    is.na(baseline_biomass_mean) == FALSE,
+    is.na(future_biomass_mean) == FALSE) %>% 
+  mutate(
+    cpue_percent_change = (future_biomass_mean - baseline_biomass_mean) / baseline_biomass_mean,
+    cpue_log_ratio = log((future_biomass_mean+ 1e-6) / (baseline_biomass_mean+ 1e-6)),
+    cpue_fold_change = exp(cpue_log_ratio)
+  )
+```
+
+
+
+```{r}
+#| label: percent change map
+
+
+# Map the log ratios
+lob_comparisons %>% 
+  rename(Lon = longitude, Lat = latitude) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = cpue_percent_change), alpha = 0.75) +
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "Tropic", 
+    labels = label_percent(),
+    limits = c(-3,3)) +
+  facet_grid(model_group~season) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(fill = "Percent Change in CPUE\nBaseline -> 2080-2100")
+```
+
+
+```{r}
+#| label: log ratio map
+
+
+# Map the log ratio difference from the baseline
+lob_comparisons %>% 
+  rename(Lon = longitude, Lat = latitude) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = cpue_log_ratio), alpha = 0.75) +
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "Tropic",
+    limits = c(-3,3)) +
+  facet_grid(model_group~season) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(fill = "Log Ratio in CPUE\nBaseline -> 2080-2100")
+```
+
+
+
+```{r}
+#| label: fold change map
+
+
+# Map the fold-change
+lob_comparisons %>% 
+  rename(Lon = longitude, Lat = latitude) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = cpue_fold_change), alpha = 0.75) +
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "Tropic") +
+  facet_grid(model_group~season) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(fill = "Fold-Change in CPUE\nBaseline -> 2080-2100")
+```
+
+
+
+## Change from Baseline Bars/Ranges
+
+For these we will have the outputs from two models, so I am going to reshape the data and treat the juvenile lobster densities as one model and the adult lobster densities as another.
+
+
+x axis = biomass density change
+y = year with jurisdiction offset
+
+
+```{r}
+# Average density within each region per time step
+period_summ <- lob_projections |>
+    mutate(
+      period = case_when(
+        year %in% c(2004:2023) ~ "base",
+        #year %in% c(2010:2023) ~ "base",
+        year %in% c(2046:2055) ~ "mid",
+        year %in% c(2091:2100) ~ "end",
+        TRUE ~ "drop"
+      )) %>% 
+    filter(period != "drop") %>% 
+    group_by(model_group, season, period, jurisdiction) |>
+    summarize(
+      "mean_biomass" = mean(proj_biomass_mean),
+      .groups = "drop") %>% 
+  filter(is.na(jurisdiction) == FALSE)  |>
+  # Join, calculate total area
+  left_join(all_regs, by = c("jurisdiction")) |>
+  mutate("Biomass_Total" = drop_units(exp(mean_biomass)*area)) %>% 
+  select(-c(geometry, area))
+
+# Reshape
+period_differences <- period_summ %>% 
+  select(-mean_biomass) %>% 
+  pivot_wider(names_from = period, values_from = Biomass_Total) %>% 
+  mutate(mid_change = mid - base,
+         end_change = end - base,
+         mid_change_percent = mid_change/base,
+         end_change_percent = end_change/base,
+         #season = fct_rev(season),
+         scenario = "SSP5: 8.5")
+```
+
+
+```{r}
+
+# Build a Plot
+ggplot(period_differences) +
+  geom_vline(xintercept = 0) +
+  geom_point(aes(mid_change_percent, y = season, color = model_group),
+             size = 2) +
+  scale_x_continuous(labels = label_percent()) +
+  scale_color_gmri() +
+  theme_classic() +
+  facet_grid(scenario~.) +
+  labs(
+    x = "Change in Biomass",
+    y = "Season")
+
+#---------
+
+# Initial Thoughts, I think I may want actuall Biomass?
+# but even if I don't I think I want the different periods on their own lines
+# lets try chicklets
+
+
+# Do some major reshaping
+chicklet_prep <- period_differences %>% 
+  select(-c(base, mid, mid_change, end, end_change)) %>% 
+  pivot_longer(
+    cols = ends_with("percent"), 
+    names_to = "period", 
+    values_to = "percent_change") %>% 
+  mutate(model_group = if_else(
+    model_group == "Juvenile Lobsters", 
+    "env_only", 
+    "vast"),
+    bar_y = if_else(
+      str_detect(period, "mid"), 1.1, 1),
+    period_label = if_else(
+      str_detect(period, "mid"), "Mid-Century", "Turn of the Century"),
+    period_alpha = if_else(
+      str_detect(period, "mid"), 1, 0.7)) %>%
+  pivot_wider(
+    names_from = model_group, 
+    values_from = "percent_change") %>% 
+  mutate(label_x = (env_only + vast)/2)
+
+#chicky_points <- period_differences %>% 
+  
+# Plot that
+bar_height <- 0.025
+ggplot(chicklet_prep) +
+  geom_vline(xintercept = 0, linewidth = 0.8, color = "gray60") +
+  ggchicklet:::geom_rrect(
+    aes(
+      xmin = vast,
+      xmax = env_only, 
+      ymin = bar_y - bar_height, 
+      ymax = bar_y + bar_height, 
+      fill = period_label,
+      alpha = I(period_alpha)),
+    r = unit(0.45, 'npc')) +
+  facet_nested(
+    jurisdiction + season ~ scenario, 
+    nest_line = TRUE) +
+  scale_x_continuous(limits = c(-1,1), labels = label_percent()) +
+  scale_y_continuous(expand = expansion(mult = c(0.75,0.75))) +
+  scale_fill_gmri() +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "top",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12)) +
+  labs(
+    x = "Biomass Change",
+    fill = "Projection Period", 
+    y = "",
+    title = "Projected Regional Biomass Changes",
+    subtitle = "Percent difference from 2004-2023 Baseline Period")
+  
+
+```
+
+
+```{r}
+#| label: compare countries chicklets
+
+
+# Do some major reshaping
+chicklet_prep <- period_differences %>% 
+  select(-c(base, mid, mid_change, end, end_change)) %>% 
+  pivot_longer(
+    cols = ends_with("percent"), 
+    names_to = "period", 
+    values_to = "percent_change") %>% 
+  mutate(model_group = if_else(
+    model_group == "Juvenile Lobsters", 
+    "env_only", 
+    "vast"),
+    bar_y = if_else(jurisdiction == "DFO", 1, 1.1),
+     period_label = if_else(
+      str_detect(period, "mid"), "Mid-Century", "Turn of the Century")) %>%
+  pivot_wider(
+    names_from = model_group, 
+    values_from = "percent_change") %>% 
+  mutate(label_x = (env_only + vast)/2)
+
+
+# Plot that
+bar_height <- 0.025
+ggplot(chicklet_prep) +
+  geom_vline(xintercept = 0, linewidth = 0.8, color = "gray60") +
+  ggchicklet:::geom_rrect(
+    aes(
+      xmin = vast,
+      xmax = env_only, 
+      ymin = bar_y - bar_height, 
+      ymax = bar_y + bar_height, 
+      fill = jurisdiction),
+    r = unit(0.45, 'npc')) +
+  geom_point(
+    data = chicklet_prep,
+    aes(x = env_only, y = bar_y, shape = "Environment\nOnly Model"), 
+    size = 3, fill = "white") +
+  geom_point(
+    data = chicklet_prep,
+    aes(x = vast, y = bar_y, shape = "Spatio-Temporal\nModel"), 
+    size = 3, fill = "white") +
+  facet_nested(
+    period_label + season ~ scenario, 
+    nest_line = TRUE) +
+  scale_shape_manual(values = c(21, 24)) +
+  scale_x_continuous(limits = c(-1,1), labels = label_percent()) +
+  scale_y_continuous(expand = expansion(mult = c(0.75,0.75))) +
+  scale_fill_gmri() +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12),
+    legend.box = "Vertical") +
+  labs(
+    x = "Biomass Change",
+    fill = "National Jurisdiction:", 
+    y = "",
+    title = "Projected Regional Biomass Changes",
+    subtitle = "Percent difference from 2004-2023 Baseline Period",
+    shape = "Distribution Model Type:")
+  
+```
+
+
+
+```{r}
+# Can we make a legend that explains what the bars mean?
+
+```
+
+
+
+# Center of Gravity Figure
+
+For this section I want to use density curves in the margins to capture decadal scale movements in the centers of gravity
+
+
+
+```{r}
+#| label: sdm_tmb center of gravity
+
+
+# Center of gravity as weighted mean
+COGrav<- function(df) {
+    cog_lat<- weighted.mean(
+      df[,"latitude"], 
+      w = exp(df[, "proj_biomass_mean"]))
+    cog_lon<- weighted.mean(
+      df[,"longitude"], 
+      w = exp(df[, "proj_biomass_mean"]))
+    
+    cog_out<- data.frame("COGx" = cog_lon, "COGy" = cog_lat)
+    return(cog_out)}
+
+# Estimate center of gravity
+res_cog <- lob_projections |>
+    group_by(model_group, season, year) |>
+    nest() %>% 
+    mutate(
+      ID = row_number(),
+      COG = map(data, ~ COGrav(.x))
+    ) |>
+    # dplyr::select(year, season, COG) |>
+    unnest_wider(COG) %>% 
+  mutate(
+    season = factor(season, levels = c("Spring", "Summer", "Fall")),
+    Decade = year - year %% 10,
+    Decade = factor(Decade, levels = sort(unique(Decade))))
+```
+
+
+```{r}
+#| label: center of gravity timeseries
+
+ggplot() +
+  geom_line(data = res_cog, aes(x = year, y = COGy, color = season), lwd = 1) +
+  scale_color_manual(name = "season", values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  scale_fill_manual(name = "season", values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  xlab("Year") +
+  ylab("Center of Latitude") +
+  facet_wrap(~model_group, ncol = 1) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12)) 
+```
+
+
+```{r}
+# Map the locations
+res_cog_sf<- st_as_sf(res_cog, coords = c("COGx", "COGy"), crs = 4326)
+ggplot() +
+    #geom_sf(data = all_regs, fill = "transparent") +
+    geom_sf(data = res_cog_sf, aes(color = Decade), alpha = 0.7) + 
+    geom_sf(data = land_sf, color = "dark gray", lwd = 0.2, na.rm = TRUE) +
+  geom_sf(data = hague_sf, color = "black", linetype = 3) + 
+  coord_sf(
+    xlim = range(res_cog$COGx)+ c(-2,2), 
+    ylim = range(res_cog$COGy) + c(-1,1), 
+    expand = T, crs = 4326) +
+    scale_fill_viridis_c(name = "Center of Gravity") +
+    facet_grid(
+      model_group~season, 
+      labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+    theme_map() +
+    theme(panel.grid.major  = element_blank()) +
+    guides(color = guide_legend(override.aes = list(shape = 15, size = 5)))
+
+```
+
+
+```{r}
+#| label: map with ggmarginal
+
+
+# Does not work with facets
+
+
+# # library(ggExtra) 
+# cog_map <-  ggplot() +
+#     # geom_sf(data = all_regs, fill = "transparent") +
+#     # geom_sf(data = res_cog_sf, aes(color = Decade), alpha = 0.7) + 
+#     geom_point(data = res_cog, aes(COGx, COGy, color = Decade), alpha = 0.7) + 
+#     # geom_sf(data = land_sf, color = "dark gray", lwd = 0.2, na.rm = TRUE) +
+#     #coord_sf(xlim = c(-72, -55), ylim = c(40, 48), expand = FALSE) +
+#     scale_fill_viridis_c(name = "Center of Gravity") +
+#     facet_grid(
+#       model_group~season, 
+#       labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+#     theme_map() +
+#     theme(panel.grid.major  = element_blank()) +
+#     guides(color = guide_legend(override.aes = list(shape = 15, size = 5)))
+# ggMarginal(cog_map, groupColour = TRUE, groupFill = TRUE)
+```
+
+
+```{r}
+#| label: COG with ggside
+
+# Does not work with sf, Just use year-round
+library(ggside)
+
+
+# Estimate center of gravity
+res_cog_annual <- lob_projections |>
+    group_by(model_group, year) |>
+    nest() %>% 
+    mutate(
+      ID = row_number(),
+      COG = map(data, ~ COGrav(.x))
+    ) |>
+    # dplyr::select(year, season, COG) |>
+    unnest_wider(COG) %>% 
+  mutate(
+    Decade = year - year %% 10,
+    Decade = factor(Decade, levels = sort(unique(Decade))))
+
+
+# 
+ggplot(res_cog_annual, aes(COGx, COGy, color = Decade)) +
+  geom_point(aes(color = Decade), alpha = 0.9) +
+  geom_xsidedensity(
+    aes(y = after_stat(density), fill = Decade), 
+    position = "dodge", alpha = 0.4) +
+  geom_ysidedensity(
+    aes(x = after_stat(density), fill = Decade), 
+    position = "dodge", alpha = 0.4) +
+  facet_grid(
+    model_group~.,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(family = "Avenir", face = "bold", size = 12)) +
+  theme(panel.grid.major  = element_blank()) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme(ggside.panel.scale = .3) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Lat + Lon Components Displayed as Decadal Distributions",
+    y = "Latitude",
+    x = "Longitude")
+
+```
+
+
+
+
+
+```{r}
+# Could I put a little flag pole or tick mark where the decadal centers are? Yes
+
+decadal_cogs <- res_cog_annual %>% 
+  group_by(Decade, model_group) %>% 
+  summarise(across(starts_with("COG"), mean))
+
+new_england <- land_sf %>% st_transform(st_crs(4326))
+  
+  
+ggplot(res_cog_annual) +
+  geom_point(
+    data = res_cog_annual,
+    aes(COGx, COGy, color = Decade), alpha = 0.9) +
+  geom_xsidevline(
+    data = decadal_cogs,
+    aes(xintercept = COGx, color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  geom_ysidehline(
+    data = decadal_cogs,
+    aes(yintercept = COGy, color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  # # Turns off ticks for side axes, not working with sf
+  # scale_xsidey_continuous(
+  #   breaks = NULL, labels = "", expand = expansion(c(0,.1))) +
+  # scale_ysidex_continuous(
+  #   breaks = NULL, labels = "", expand = expansion(c(0,.1)))  +
+  # What about land now?
+  geom_sf(
+    data = new_england, 
+    color = "dark gray", 
+    lwd = 0.2, 
+    na.rm = TRUE) +
+  facet_wrap(
+    ~model_group, ncol = 2,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  # Use scale_x_continuous to zoom, coord_sf is an issue
+  scale_color_carto_d(palette = "Vivid") +
+  scale_x_continuous(
+    limits = range(res_cog_annual$COGx) + c(-2,2)) + 
+  scale_y_continuous(
+    limits = range(res_cog_annual$COGy) + c(-1,1)) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major  = element_blank(),
+    strip.text = element_text(
+      family = "Avenir", face = "bold", size = 12)) +
+  theme(ggside.panel.scale = .05) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Decadal Centerpoints Displayed in Margins",
+    y = "Latitude",
+    x = "Longitude")
+
+
+
+```
+
+
+```{r}
+
+decadal_cog_ranges <- res_cog_annual %>% 
+  group_by(Decade, model_group) %>% 
+  summarise(
+    across(
+      starts_with("COG"), 
+      .fns = list("min" = min, "max" = max)),
+    .groups = "drop") %>% 
+  mutate(decade_y = rev(as.numeric(Decade)))
+  
+ggplot(res_cog_annual) +
+  geom_point(
+    data = res_cog_annual,
+    aes(COGx, COGy, color = Decade), alpha = 0.9) +
+  geom_xsidesegment(
+    data = decadal_cog_ranges,
+    aes(
+      x = COGx_min, xend = COGx_max, 
+      y = decade_y, yend = decade_y, 
+      color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  geom_ysidesegment(
+    data = decadal_cog_ranges,
+    aes(
+      x = decade_y, xend = decade_y, 
+      y = COGy_min, yend = COGy_max, 
+      color = Decade), 
+    linewidth = 1, alpha = 0.9) +
+  geom_sf(
+    data = new_england, 
+    color = "dark gray", 
+    lwd = 0.2, 
+    na.rm = TRUE) +
+  facet_wrap(
+    ~model_group, ncol = 2,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  # Use scale_x_continuous to zoom, coord_sf is an issue
+  #scale_color_carto_d(palette = "Vivid") +
+  scale_color_carto_d(palette = "Mint", direction = -1) +
+  scale_x_continuous(
+    limits = range(res_cog_annual$COGx) + c(-2,2)) + 
+  scale_y_continuous(
+    limits = range(res_cog_annual$COGy) + c(-1,1)) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Avenir"),
+    legend.position = "bottom",
+    legend.title.position = "left",
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major  = element_blank(),
+    strip.text = element_text(
+      family = "Avenir", face = "bold", size = 12)) +
+  theme(ggside.panel.scale = .1) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Decadal Centerpoints Displayed in Margins",
+    y = "Latitude",
+    x = "Longitude")
+
+```
+
+
+

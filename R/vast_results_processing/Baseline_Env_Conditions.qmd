@@ -197,7 +197,7 @@ hague_sf <- read_sf(here::here("Coca_SDM_app_dev/dev", "scratch_data/hagueline_c
 
 Average conditions from the SSP scenarios have been processed for mapping conditions during the baseline period (2010-2019) as well as at points in the two SSP scenarios when the average SST for the region crosses 0.5, 1, 2, 3, & 4 degrees celsius.
 
-These environmental states were processed in: `temperature_milestone_conditions.ipynb`
+These environmental states were processed in: `sdm_workflow/cmip6_processing/temperature_milestone_conditions.ipynb`
 
 And can be found in: `RES_Data/SSPX_XX/SST_horizon_conditions/`
 
@@ -315,13 +315,16 @@ pref_all <- pref_dat %>%
 
 
 
-#### 4. Average Conditions Acrosss Ecological Production Units
+#### 4. Average Conditions Across Ecological Production Units
 
 For Each of these species preference curves we want to overlay what the average temperatures are for an EPU at a certain point in time. The EPU's have all been masked over the SSP ensembles already, so we just need to get those timeseries and pull out the points in time where these thresholds are crossed.
 
-Timeseries of SSP scenarios are produced in: `helper_01_regional_timeseries_construction.R`
+Timeseries of SSP scenarios are produced in: `https://github.com/adamkemberling/sdm_workflow/CMIP6_processing/R/helper01_regional_timeseries_construction.R#L408`
 
-Files can be found: ``
+A local copy of the workflow is now in
+`CRSBND_Regional_Conditions.qmd`
+
+Files can be found: `Res_Data/CMIP6/", ssp_scenario, "/BiasCorrected/TimeseriesData/`
 
 
 ```{r}

@@ -1,0 +1,1470 @@
+---
+title: "Cross-Boundary Projections Diagnostics"
+format: 
+  html:
+    self-contained: true
+execute:
+  echo: false
+  message: false
+  warning: false
+---
+
+# Model Evaluation for Cross Boundary
+
+The following sections will cover how to pull out common diagnostics from single-species SDMTMB model outputs and some data visualization development for cross boundary metrics for US and Canadian population densities.
+
+
+```{r}
+# Load packages
+library(units)
+library(here)
+library(tidyverse)
+library(gmRi)
+library(sf)
+library(patchwork)
+library(rcartocolor)
+library(ggchicklet)
+library(ggh4x)
+library(ggside)
+library(scales)
+library(sdmTMB)
+
+
+
+# Paths to Box Assets 
+mills_path <- cs_path(box_group = "mills")
+crsbnd_path <- str_c(mills_path, "Projects/Single_Species_SDMS/Results")
+
+
+
+# Load the shapefiles
+dfo_bounds  <- read_sf(here::here("local_data/Regions_for_CRSBND/DFO.shp"))
+nmfs_bounds <- read_sf(here::here("local_data/Regions_for_CRSBND/NMFS.shp"))
+land_sf     <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "nw_atlantic_countries_crs32619.geojson"))
+hague_sf <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hagueline_crs32619.geojson"))
+
+
+# Need to get an area per region...number of cells per region
+all_regs <- bind_rows(dfo_bounds, nmfs_bounds) |>
+  mutate(area = st_area(geometry)) %>% 
+  rename(jurisdiction = Region)
+all_regs$area <- set_units(all_regs$area, km^2)
+
+
+```
+
+
+```{r}
+#| label: map theme
+
+# Plotting map theme
+theme_map <- function(fontfam = "Avenir", guides = T, ...){
+  list(
+    # Theme options, with ellipse to add more
+    theme(
+      # Font across all text
+      text = element_text(family = "Avenir"),
+      
+      # Titles + Text
+      plot.title = element_text(hjust = 0, face = "bold", size = 20),
+      plot.subtitle = element_text(size = 18),
+      legend.title = element_text(size = 16, lineheight = 1.75),
+      legend.text = element_text(size = 12), 
+      legend.spacing.y = unit(1.75, "lines"),
+      
+      # Grids and Axes
+      panel.background = element_blank(), 
+      panel.border = element_rect(color = "black", fill = "transparent"), 
+      panel.grid.major = element_line(color = "gray80"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.ticks=element_blank(),
+      plot.margin = margin(t = 3, r = 3, b = 3, l = 3, unit = "pt"),
+      legend.background = element_rect(
+        color = "transparent", 
+        fill = "white", 
+        linewidth = 0.25),
+      # Facets
+      strip.background = element_rect(
+        fill     = "#00736D", 
+        color    = "white"),
+      strip.text = element_text(
+        color    = "white", 
+        face     = "bold",
+        size     = 12,
+        family   = fontfam),
+      legend.position = "bottom",
+      
+      # Use ellipses for tweaks on the fly:
+      ...))
+}
+
+```
+
+
+```{r}
+#| label: sf mesh making
+
+
+# This was found in Create_Mesh_from_Knots.R
+sf_meshify <- function(
+    input_df, 
+    coords = c("Lon", "Lat"), 
+    length_km = 25, 
+    in_crs = 4326, 
+    trans_crs = 32619, 
+    square = T){
+  
+  # Make the dataframe an sf class using coordinates
+  in_sf <- st_as_sf(input_df, coords = coords, crs = in_crs, remove = F) %>% 
+    # Transform it to a crs that is projected in meters
+    st_transform(crs = trans_crs)
+  
+  # If we are getting gaps we can buffer here, or up the mesh size
+  
+  
+  # Use that data to define a grid with dimensions of length_km*length_km
+  sf_grid <- st_make_grid(
+    x = in_sf,
+    cellsize = c(length_km*1000, length_km*1000), 
+    what = "polygons", 
+    square = square) %>% 
+    # Make the grid an sf class
+    st_as_sf() 
+  
+  # Use the original data to trim it so its just cells that overlap the points
+  sf_out <- sf_grid %>% 
+    st_filter(in_sf, .predicate = st_contains) %>%
+    st_as_sf() 
+  
+  # Join the clipped grid to the dataset
+  sf_out <- st_join(sf_out, in_sf, join = st_intersects)
+  # Return the results  
+  return(sf_out)
+  
+}
+
+```
+
+
+
+
+
+
+# Single Species Projection Results
+
+Andrew has been processing individual species distribution models for a suite of species that inhabit the Northeast US and Scotian shelf habitate. These models are developed using a combined catch dataset built from the US and Canadian fisheries independent trawl survey programs.
+
+There are three model "types" being explored to investigate different model structures and their tradeoffs when applied for projected species distributions.
+
+
+## Loading sdmTMB Models
+
+The models themselves provide details on the formula's used and can be used to produce marginal effects plots of the species preferences for depth and temperature.
+
+
+```{r}
+#| label: load sdm models
+
+mods_path <- here::here("local_data/single_speciessdm_results/Fit_Mods")
+mod_names <- str_remove_all(list.files(mods_path, pattern = ".rds"), ".rds")
+sdm_mods <- map(
+  .x = list.files(mods_path, pattern = ".rds", full.names = T),
+  .f = ~read_rds(.x)) %>%
+  setNames(mod_names)
+```
+
+
+## Load Model Projections
+
+The projections have been run for two SSP scenarios, which extend forward in time through 2100.
+
+
+```{r}
+#| label: load Sdmtmb projections
+
+# Load the projection data - sent over from Andrew
+
+# # Projections Set 1
+# projections_path <- paste0(crsbnd_path, "/projections/projections_may25")
+# 
+# # Get their names, without the _mean_projections.rds
+# projection_names <- str_remove_all(
+#   list.files(projections_path), 
+#   pattern = "_mean_projections.rds")
+
+# Projections set 2
+# Sent as a standalone zip folder with models
+projections_path <- here::here("local_data/single_speciessdm_results/Projections")
+projection_names <- str_remove_all(
+  list.files(projections_path, pattern = ".rds"), 
+  ".rds")
+
+
+# Load them up
+projections <- list.files(projections_path, full.names = T) %>% 
+  setNames(projection_names) %>% 
+  map_dfr(
+    ~read_rds(.x) %>% 
+      mutate(
+        season = factor(
+          season, 
+          levels = c("spring", "summer", "fall"))), 
+    .id = "model_group")
+
+
+# Split out the species, model type, and ssp scenario information
+projections <- projections %>% 
+  mutate(
+    model_id = model_group,
+    scenario = if_else(str_detect(model_group, "SSP1"), "SSP1-2.6", "SSP5-8.5"),
+    model_group = str_remove_all(model_group, "_SSP1_26|_SSP5_85"),
+    model_type = case_when(
+      str_detect(model_group, "_sp_st") ~ "SeasonSVC + SP + SP_ST",
+      str_detect(model_group, "_sp") ~ "SeasonSVC + SP",
+      str_detect(model_group, "_null") ~ "SeasonSVC"),
+    model_group = str_remove_all(model_group, "_sp_st|_sp|_null|_mean_projections")) %>% 
+  rename(species = model_group)
+
+```
+
+
+
+
+
+```{r}
+#| label: make hex mesh
+
+# Get unique Coordinates
+unique_locations <- distinct(
+  projections, longitude, latitude) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), 
+           crs = 4326, remove = F)
+
+# Make a mesh from the sdm locations
+sdm_hex_grid <- sf_meshify(
+  input_df = unique_locations, 
+  square = F, 
+  length_km = 35)
+
+```
+
+
+### Plotting Preference Curves
+
+Preference curves can be produced by providing a prediction dataframe to the `predict()` function/method. For this, I set provide a range of values for the effecto of interest and a value of 0 for the other fixed effects. The predictors are scaled so this process holds the other effects at the mean value while exploring a range of values for the one we're interested in.
+
+```{r}
+#| label: fixed effect rescaling
+
+
+
+# Load the rescaling values for / coca
+rescale_df <- tribble(
+  ~"covariate",   ~"gmean", ~"gsd",
+  "Depth",         123.47, 100.2,
+  "SST_seasonal",  11.11,  4.55,
+  "BT_seasonal",   7,      2.72
+)
+
+
+```
+
+
+
+```{r}
+#| label: Bottom Temperature preference curves
+
+# # What do these even look like, a lot
+# str(sdm_mods$Cod_null)
+# sdm_mods$Cod_null$formula
+# sdm_mods$Cod_null$data
+
+# Can we plot something, anything?
+# sdm_mods$Cod_null$terms
+
+
+# use predict() and supply the dataframe
+bt_range <- sdm_mods$Cod_null$data %>%
+  group_by(season) %>% 
+  summarise(BT_min = min(BT_seasonal_scaled),
+            BT_max = max(BT_seasonal_scaled))
+
+
+# Predict the marginal effects
+null_bt_prefs <- predict(
+    sdm_mods$Cod_null, 
+    #newdata = sdm_mods$Cod_null$data[1,], # this is what we need to predict
+    newdata = tibble(
+        "year_season_int" = 1,
+        "survey" = "NEFSC",
+        "season" = "spring",
+        "factor(season)spring" = 1,
+        "factor(season)summer" = 0,
+        "factor(season)fall" = 0,
+        "Depth_scaled" = 0, # Set to 0
+        "BT_seasonal_scaled" = seq(-5,5, .05)),
+    se_fit = TRUE, 
+    re_form = NA)
+
+
+
+
+# Plot null preferences
+null_bt_prefs <- null_bt_prefs %>% 
+    select(-season) %>% 
+  mutate(
+    BT_actual = (BT_seasonal_scaled*rescale_df[[3,3]]) + rescale_df[[3,2]],
+    confmin = exp(est - 1.96*est_se),
+    confmax = exp(est + 1.96*est_se)) %>% 
+  mutate(
+    confmin = exp(est - 1.96*est_se),
+    confmax = exp(est + 1.96*est_se)) 
+
+# Plot without error
+bt_no_error <- null_bt_prefs %>% 
+    ggplot() +
+      geom_rect(
+        data = bt_range, 
+        aes(xmin = (BT_min*rescale_df[[3,3]]) + rescale_df[[3,2]] , 
+            xmax = (BT_max*rescale_df[[3,3]]) + rescale_df[[3,2]] , 
+            ymin = -Inf, 
+            ymax = Inf, fill = season), 
+        alpha = 0.3) +
+      geom_line(aes(x = BT_actual, y = exp(est))) +
+      theme_gmri(legend.position = "bottom") +
+      facet_wrap(~season,ncol = 1) +
+      labs(
+        title = "Null Model ",
+        y = "Estimated Biomass/km2",
+        x = "Bottom Temperature",
+        subtitle = "Fixed Effect Marginal Effect Plot, no uncertainty",
+        fill = "Training Data Exposure Range")
+
+
+# Plot with error
+bt_error <- null_bt_prefs %>% 
+    ggplot() +
+      geom_rect(
+        data = bt_range, 
+        aes(xmin = (BT_min*rescale_df[[3,3]]) + rescale_df[[3,2]] , 
+            xmax = (BT_max*rescale_df[[3,3]]) + rescale_df[[3,2]] , 
+            ymin = -Inf, 
+            ymax = Inf, fill = season), 
+        alpha = 0.3) +
+      geom_ribbon(
+        aes(BT_actual, ymin = confmin, ymax = confmax),
+        fill = "gray60", alpha = 0.2) +
+      geom_line(aes(x = BT_actual, y = exp(est))) +
+      theme_gmri(legend.position = "bottom") +
+      facet_wrap(~season,ncol = 1) +
+      labs(
+        title = "Null Model ",
+        y = "Estimated Biomass/km2",
+        x = "Bottom Temperature",
+        subtitle = "Fixed Effect Marginal Effect Plot, with uncertainty",
+        fill = "Training Data Exposure Range")
+
+(bt_no_error | bt_error) + plot_layout(guides = "collect") & theme(legend.position = "bottom")
+
+
+```
+
+```{r}
+#| label: depth preference curves
+
+# Predict the marginal effects
+null_depth_prefs <- predict(
+    sdm_mods$Cod_null, 
+    #newdata = sdm_mods$Cod_null$data[1,], # this is what we need to predict
+    newdata = tibble(
+        "year_season_int" = 1,
+        "survey" = "NEFSC",
+        "season" = "spring",
+        "factor(season)spring" = 1,
+        "factor(season)summer" = 0,
+        "factor(season)fall" = 0,
+        "Depth_scaled" = seq(-5,5, .05), # Set to 0
+        "BT_seasonal_scaled" = 0),
+    se_fit = TRUE, 
+    re_form = NA) 
+
+
+# Plot null preferences
+null_depth_prefs %>% 
+    select(-season) %>% 
+  mutate(
+    Depth_actual = (Depth_scaled*rescale_df[[1,3]]) + rescale_df[[1,2]],
+    confmin = exp(est - 1.96*est_se),
+    confmax = exp(est + 1.96*est_se)) %>% 
+    ggplot() +
+      geom_ribbon(
+        #aes(Depth_scaled, ymin = confmin, ymax = confmax),
+        aes(Depth_actual, ymin = confmin, ymax = confmax),
+        fill = "gray60", alpha = 0.2) +
+      #geom_line(aes(x = Depth_scaled, y = exp(est))) +
+      geom_line(aes(x = Depth_actual, y = exp(est))) +
+      #scale_x_continuous(limits = c(-5,5)) +
+      theme_gmri(legend.position = "bottom") +
+      labs(
+        title = "Null Model ",
+       subtitle = "Fixed Effect Marginal Effects",
+       fill = "Training Data Exposure Range")
+
+
+
+```
+
+
+
+```{r}
+#| label: rescale fixed effect units, overlay observed baseline
+
+# # Join them
+# null_fixed_effects <- left_join(
+#   null_depth_prefs %>% select(-BT_seasonal_scaled),
+#   null_bt_prefs %>% select(-Depth_scaled)) %>% 
+#   pivot_longer(
+#     cols = ends_with("scaled"), 
+#     names_to = "effect_name", 
+#     values_to = "covar_scaled") %>% 
+#   mutate(covariate = if_else(str_detect(tolower(effect_name), "depth"), "Depth", "BT_seasonal"))
+# 
+# 
+# 
+# 
+# # Rejoin those and scale back
+# null_fixed_effects <- left_join(null_fixed_effects, rescale_df) %>% 
+#   mutate(
+#     val_actual = (covar_scaled * gsd) + gmean,
+#     fit_exp = exp(est),
+#     up_exp  = exp(est + 1.96*est_se),
+#     low_exp = exp(est - 1.96*est_se))
+# 
+# null_fixed_effects %>% filter(covariate != "Depth")
+# 
+# # Load what the average conditions were here:
+# # These need to be reprocessed for the baseline period we're using here:
+# # temperature_milestone_conditions.ipynb
+# # env_condition_data <- read_csv(here::here("Coca_SDM_app_dev/app_ready_data/projected_environmental_conditions.csv"))
+# # these need to be re-done for dfo * NEFSC
+# 
+# 
+# 
+# ggplot(null_fixed_effects, aes(val_actual)) +
+#   geom_line(aes(y = fit_exp)) +
+#   facet_grid(season~covariate,scales = "free")
+
+```
+
+
+
+
+### Spatially Varying Season Effects
+
+
+In all three models, the seasonal effect is fit as a spatially explicit surface.
+
+```{r}
+# Andrews plan, read in model
+# read in projection data
+# use year(s) before projection period
+# 
+
+# Just need a single year, grab all locations and their combinations with the seasons
+# Set scaled depth and bottom temperature to zero
+season_effect_df <- projections %>% 
+  filter(year == 2010,
+         species == "Cod") %>% 
+  distinct(
+    species, year, longitude, latitude, survey, season, 
+    `factor(season)spring`, `factor(season)summer`, `factor(season)fall`) %>% 
+  mutate(
+    "Depth_scaled" = 0,
+    "BT_seasonal_scaled" = 0
+  )
+
+# I can grab the year_season_int from the fitted period
+season_year_int_schematic <- sdm_mods$Cod_null$data %>% 
+  filter(year == 2010) %>% 
+  distinct(year, season, year_season_int)
+
+# Join that back in
+season_effect_df <- left_join(season_effect_df, season_year_int_schematic)
+
+# Use predict
+season_marginal_effects <- predict(
+  sdm_mods$Cod_null,
+  season_effect_df,
+  se_fit = F)
+
+
+
+# est = biomass on log scale
+# zeta_s_`factor(season)spring` = spatially varying coefficient?
+```
+
+
+### Seasonal Marginal Effects
+
+```{r}
+# Map check
+season_marginal_effects %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = est)) +
+  scale_fill_distiller(
+    palette = "RdBu", 
+    limits = c(-10, 10), 
+    oob = oob_squish) +
+  theme_map() +
+  facet_grid(species~season) +
+  labs(
+    title = "Season Marginal Effects Map",
+    subtitle = "Estimated Biomass (link scale)")
+```
+
+### Seasonal Zetas
+
+
+
+```{r}
+# Reshape data for season zeta
+season_zetas <- season_marginal_effects %>% 
+  distinct(
+    species, longitude, latitude, 
+    `zeta_s_\`factor(season)spring\``, `zeta_s_\`factor(season)summer\``, 
+    `zeta_s_\`factor(season)fall\``) %>% 
+  setNames(c("species", "longitude", "latitude", "spring", "summer", "fall")) %>% 
+  pivot_longer(
+    cols = -c(species, longitude, latitude),
+    names_to = "season",
+    values_to = "zeta") %>% 
+  mutate(season = factor(season, levels = c("spring", "summer", "fall"))) 
+
+# Plot them without the main season effect
+season_zetas %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = zeta)) +
+  scale_fill_distiller(
+    palette = "RdBu", 
+    limits = c(-10, 10), 
+    oob = oob_squish) +
+  facet_wrap(~season) +
+  theme_map() +
+  facet_grid(species~season) +
+  labs(title = "Season Zeta, w/o Main Season Effect",
+       subtitle = "Coefficient Estimate for Spatially-Varying")
+```
+
+
+### Season Zetas + Main Effect
+
+
+```{r}
+# Next:
+
+# Two season effects:
+# Main effect: factor(season)spting
+# spatially varying season
+# Then we want to pull coefficients,
+# These values get added to the spatially varying before mapping
+season_main_effects <- tidy(sdm_mods$Cod_sp) %>% 
+  filter(str_detect(term, "summer|fall")) %>% 
+  mutate(season = str_remove(term, "factor(season)"))
+  
+# Plot them without the main season effect
+season_zetas %>% 
+  left_join(season_main_effects) %>% 
+  mutate(
+    estimate = if_else(is.na(estimate), 0, estimate),
+    full_seasonal = zeta + estimate,
+    season = factor(season, levels = c("spring", "summer", "fall"))) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = full_seasonal)) +
+  scale_fill_distiller(
+    palette = "RdBu", 
+    limits = c(-10, 10), 
+    oob = oob_squish) +
+  facet_wrap(~season) +
+  theme_map() +
+  facet_grid(species~season) +
+  labs(title = "Season Zeta + Main Season Effect")
+
+
+```
+
+
+### Model Type Impact on Seaonal Effects
+
+
+```{r}
+#| label: attempt to do different model predictions
+#| eval: false
+
+
+
+# I can grab the year_season_int from the fitted period
+season_marginal_effects <- list(
+  "SeasonSVC" = sdm_mods$Cod_null, 
+  "SeasonSVC + SP" = sdm_mods$Cod_sp#, 
+  #"SeasonSVC + SP + SP_ST" = sdm_mods$Cod_sp_st
+  )  %>% 
+  # Run all three
+  imap_dfr(function(sdm_mod_x, model_type_x){
+    
+    # Pull the lat, lon, season details to project along
+    season_prediction_structure <- projections %>% 
+      filter(
+        year == 2010,
+        species == "Cod",
+        model_type == model_type_x) %>% 
+      distinct(
+        species, year, survey, season, longitude, latitude, 
+        `factor(season)spring`, `factor(season)summer`, `factor(season)fall`) %>% 
+      mutate(
+        "Depth_scaled" = 0,
+        "BT_seasonal_scaled" = 0
+      )
+
+    
+    # Get the season_year_int structure
+     season_year_int_schematic <- sdm_mod_x$data %>% 
+      filter(year == 2010) %>% 
+      distinct(year, season, year_season_int, year_season_fac)
+    
+    
+    # Join that back in
+    season_effect_df <- left_join(
+      x = season_prediction_structure, 
+      y = season_year_int_schematic)
+    
+    # Use predict
+    season_marginal_effects <- predict(
+      sdm_mod_x,
+      season_effect_df,
+      se_fit = FALSE)
+    
+    return(season_marginal_effects)
+    
+  },.id = "model_type")
+
+
+
+
+# Map check
+season_marginal_effects %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(aes(fill = est)) +
+  scale_fill_distiller(
+    palette = "RdBu", 
+    limits = c(-5, 5), 
+    oob = oob_squish) +
+  theme_map() +
+  facet_nested(model_type ~ species*season) +
+  labs(
+    title = "Season Marginal Effects Map",
+    subtitle = "Estimated Biomass (link scale)")
+
+
+```
+
+
+# Baseline Period Maps
+
+For these maps a baseline period of the most recent 20 years is used (2004-2023) as a benchmark for comparison.
+
+### Assign Nationality Labels to Projections
+
+For cross-boundary we are interested in differences between US and Canadian study areas. This section takes the unique projection locations and assigns the national jurisdiction that each location falls within.
+
+```{r}
+# What is the proportion of the predicted biomass in each region?
+
+# # Do the overlays to assign which region it belongs too
+# dfo_bounds
+# nmfs_bounds
+
+# Label which area the points fall within
+dfo_locations <- st_join(
+  unique_locations, 
+  dfo_bounds, 
+  join = st_within) %>% 
+  filter(is.na(Region) == FALSE)
+nmfs_locations <- st_join(
+  unique_locations, 
+  nmfs_bounds, 
+  join = st_within) %>% 
+  filter(is.na(Region) == FALSE)
+region_labs <- bind_rows(
+  dfo_locations, 
+  nmfs_locations) %>% 
+  st_drop_geometry() %>% 
+  rename(jurisdiction = Region)
+
+
+# Add these back in
+projections <- left_join(projections, region_labs)
+
+```
+
+
+This chunk of code applies the approach for an approachable subset of data, and makes a map of the baseline biomass estimates.
+
+```{r}
+#| fig-height: 8
+
+# Take one species as a tester:
+# test_species <- "Halibut"
+test_species <- "Cod"
+
+# Filter those species
+single_species_projections <- filter(projections, species ==  test_species)
+
+# Are we already going to run into issues with values? - obvi
+simple_baseline <- single_species_projections %>% 
+  filter(
+    #season == "summer",
+    model_type == "SeasonSVC",
+    scenario == "SSP1-2.6") %>% 
+  mutate(period = case_when(
+    year %in% c(2004:2023) ~ "baseline",
+    year %in% c(2045:2054) ~ "mid_century",
+    year %in% c(2090:2100) ~ "end_century",
+    TRUE ~ "drop")) %>%
+  filter(period != "drop") %>% 
+  group_by(period, jurisdiction, species, model_type, scenario, season, longitude, latitude) %>% 
+  summarise(
+    biomass_mean = mean(proj_biomass_mean, na.rm = T),
+    .groups = "drop") %>% 
+  pivot_wider(names_from = period, values_from = biomass_mean) %>% 
+  mutate(
+    mid_century_change = mid_century - baseline,
+    end_century_change = end_century - baseline)
+  
+  
+
+# Map the Baseline Period CPUE
+simple_baseline  %>% 
+  # Add context for symbology
+  mutate(
+    # 1. Highlight cases of range expansion or decline
+    distribution_edge = case_when(
+      baseline < 1     ~ "Biomass < 1kg/gm2",
+      baseline > 10^8  ~ "Biomass > 10^8kg/gm2",
+      TRUE ~ NA)#,
+    # # 2. Highlight uncertainty with alpha?
+    # error_alpha = if_else()
+    ) %>% 
+  left_join(sdm_hex_grid) %>%
+  st_as_sf() %>%
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = baseline,
+      #alpha = I(error_alpha),
+      color = distribution_edge),
+        linewidth = 0.2) +
+  scale_color_manual(
+    values = c(
+    "Biomass < 1kg/gm2" = "gray60",
+    "Biomass > 10^8kg/gm2" = "#CA562C"), 
+    na.value = "transparent",
+    na.translate = F) +
+  geom_sf(data = land_sf, color = "gray95", fill = "gray70", linewidth = 0.15) +
+  geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 1) +
+  facet_nested(scenario*model_type~species*season) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "RedOr", 
+    transform = "log10",
+    labels = label_log(base = 10),
+    limits = 10^c(0,8),
+    na.value = "transparent") +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(fill = "Baseline Biomass CPUE kg/km2",
+       title = "Baseline Period Mean CPUE",
+       subtitles = "Checking where/why predictions would be NA")
+```
+
+
+### Baseline Period Map
+
+This is the full comparison matrix:
+
+```{r}
+#| fig-height: 8
+
+# Get the average cpue over the most recent 20 years
+single_species_baselines <-  single_species_projections %>% 
+  mutate(period = case_when(
+    year %in% c(2004:2023) ~ "baseline",
+    year %in% c(2045:2054) ~ "mid_century",
+    year %in% c(2090:2100) ~ "end_century",
+    TRUE ~ "drop")) %>%
+  filter(period != "drop") %>% 
+  group_by(period, jurisdiction, species, model_type, scenario, season, longitude, latitude) %>% 
+  summarise(
+    biomass_mean = mean(proj_biomass_mean, na.rm = T),
+    .groups = "drop") %>% 
+  pivot_wider(names_from = period, values_from = biomass_mean) %>% 
+  mutate(
+    mid_century_change = mid_century - baseline,
+    end_century_change = end_century - baseline)
+
+
+
+# Map the Baseline Period CPUE
+single_species_baselines %>% 
+  # Add context for symbology
+  mutate(
+    # 1. Highlight cases of range expansion or decline
+    distribution_edge = case_when(
+      baseline < 1     ~ "Biomass < 1kg/gm2",
+      baseline > 10^8  ~ "Biomass > 10^8kg/gm2",
+      TRUE ~ NA)#,
+    # # 2. Highlight uncertainty with alpha?
+    # error_alpha = if_else()
+    ) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = baseline,
+      #alpha = I(error_alpha),
+      color = distribution_edge),
+        linewidth = 0.2) +
+  scale_color_manual(
+    values = c(
+    "Biomass < 1kg/gm2" = "gray60",
+    "Biomass > 10^8kg/gm2" = "#CA562C"), 
+    na.value = "transparent",
+    na.translate = F) +
+  geom_sf(data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(data = hague_sf, color = "black", linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "RedOr", 
+    transform = "log10", 
+    labels = label_log(base = 10),
+    limits = 10^c(0,8),
+    na.value = "transparent") +
+  facet_nested(model_type~species*scenario*season, 
+    labeller = labeller(model_type = label_wrap_gen(width = 8))) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "Baseline Period (2004-2023)",
+    fill = "Biomass CPUE kg/km2")
+
+```
+
+
+### Mid-Century Biomass Map
+
+
+```{r}
+ 
+# Map the Baseline Period CPUE
+single_species_baselines %>% 
+  mutate(
+    # 1. Highlight cases of range expansion or decline
+    distribution_edge = case_when(
+      mid_century < 1     ~ "Biomass < 1kg/gm2",
+      mid_century > 10^8  ~ "Biomass > 10^8kg/gm2",
+      TRUE ~ NA)#,
+    # # 2. Highlight uncertainty with alpha?
+    # error_alpha = if_else()
+    ) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = mid_century,
+      #alpha = I(error_alpha),
+      color = distribution_edge),
+        linewidth = 0.2) +
+      scale_color_manual(
+        values = c(
+        "Biomass < 1kg/gm2" = "gray60",
+        "Biomass > 10^8kg/gm2" = "#CA562C"), 
+        na.value = "transparent",
+        na.translate = F) +
+  geom_sf(
+    data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(
+    data = hague_sf, color = "black", 
+    linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "RedOr", 
+    transform = "log10", 
+    labels = label_log(base = 10),
+    limits = 10^c(0,8),
+    na.value = "transparent") +
+  facet_nested(model_type~species*scenario*season, 
+    labeller = labeller(model_type = label_wrap_gen(width = 8))) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "Mid-Century (2045-2054)",
+    fill = "Biomass CPUE kg/km2")
+```
+
+### Mid-Century Change
+
+```{r}
+ 
+# Map of mid-century changes
+single_species_baselines %>% 
+  # Add context for symbology
+  mutate(
+      # 1. Highlight cases of range expansion or decline
+      range_shift = case_when(
+        baseline < 1 & mid_century > 1 ~ "Range Gained",
+        baseline > 1 & mid_century < 1 ~ "Range Lost",
+        TRUE ~ NA),
+      # Hide minor changes using alpha - should be done based off base biomass
+      minor_change = case_when(
+        between(mid_century_change, -5,5) ~ 0.3,
+        between(mid_century_change, -10,10) ~ 0.4,
+        between(mid_century_change, -100, 100) ~ 0.6,
+        between(mid_century_change, -1000, 1000) ~ 1,
+        mid_century_change > 1000 ~ 1,
+        mid_century_change < -1000 ~ 1,
+        TRUE ~ 0),
+      # Fully Hide places that don't have measurable biomass in future state,
+      mid_century_change = ifelse(mid_century < 1, NA, mid_century_change)) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = mid_century_change,
+      alpha = I(minor_change),
+      color = range_shift),
+    linewidth = 0.2) +
+  scale_color_manual(values = c(
+    "Range Gained" = "#008080",
+    "Range Lost" = "#CA562C"), 
+    na.value = "transparent",
+    na.translate = F) +
+  geom_sf(
+    data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(
+    data = hague_sf, color = "black", 
+    linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "Geyser", 
+    limits =  c(-1,1) *
+      quantile(
+        abs(single_species_baselines$mid_century_change), 
+        probs = c(0.85), na.rm = T),
+    oob = oob_squish, 
+    breaks = pretty_breaks(n = 5),
+    na.value = "transparent",
+    direction = -1) +
+  facet_nested(model_type~species*scenario*season, 
+    labeller = labeller(model_type = label_wrap_gen(width = 8))) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "Mid-Century Biomass Change (2045-2054)",
+    fill = "Biomass CPUE kg/km2")
+```
+
+
+
+
+### End of Century Biomass
+
+```{r}
+ 
+# Map the Baseline Period CPUE
+single_species_baselines %>% 
+  mutate(
+    # 1. Highlight cases of range expansion or decline
+    distribution_edge = case_when(
+      end_century < 1     ~ "Biomass < 1kg/gm2",
+      end_century > 10^8  ~ "Biomass > 10^8kg/gm2",
+      TRUE ~ NA)#,
+    # # 2. Highlight uncertainty with alpha?
+    # error_alpha = if_else()
+    ) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = end_century,
+      color = distribution_edge),
+        linewidth = 0.2) +
+      scale_color_manual(
+        values = c(
+        "Biomass < 1kg/gm2" = "gray60",
+        "Biomass > 10^8kg/gm2" = "#CA562C"), 
+        na.value = "transparent",
+        na.translate = F) +
+  geom_sf(
+    data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(
+    data = hague_sf, color = "black", 
+    linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "RedOr", 
+    transform = "log10", 
+    labels = label_log(base = 10),
+    limits = 10^c(0,8),
+    oob = oob_squish,
+    na.value = "transparent") +
+  facet_nested(
+    model_type~species*scenario*season, 
+    labeller = labeller(model_type = label_wrap_gen(width = 8))) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "End of Century (2090-2100)",
+    fill = "Biomass CPUE kg/km2")
+
+```
+
+### End of Century Change
+
+
+```{r}
+ 
+# Map of end-ofcentury changes
+single_species_baselines %>% 
+  # Add context for symbology
+  mutate(
+      # 1. Highlight cases of range expansion or decline
+      range_shift = case_when(
+        baseline < 1 & end_century > 1 ~ "Range Gained",
+        baseline > 1 & end_century < 1 ~ "Range Lost",
+        TRUE ~ NA),
+      # Hide minor changes using alpha - should be done based off base biomass
+      minor_change = case_when(
+        between(end_century_change, -5,5) ~ 0.3,
+        between(end_century_change, -10,10) ~ 0.4,
+        between(end_century_change, -100, 100) ~ 0.6,
+        between(end_century_change, -1000, 1000) ~ 1,
+        end_century_change > 1000 ~ 1,
+        end_century_change < -1000 ~ 1,
+        TRUE ~ 0),
+      # Fully Hide places that don't have measurable biomass in future state,
+      end_century_change = ifelse(end_century < 1, NA, end_century_change)) %>% 
+  left_join(sdm_hex_grid) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = end_century_change,
+      alpha = I(minor_change),
+      color = range_shift),
+    linewidth = 0.2) +
+  scale_color_manual(values = c(
+    "Range Gained" = "#008080",
+    "Range Lost" = "#CA562C"), 
+    na.value = "transparent",
+    na.translate = F) +
+  geom_sf(
+    data = land_sf, color = "gray95", fill = "gray40", linewidth = 0.15) +
+  geom_sf(
+    data = hague_sf, color = "black", 
+    linewidth = 1, linetype = 1) +
+  rcartocolor::scale_fill_carto_c(
+    palette = "Geyser", 
+    limits =  c(-1,1) *
+      quantile(
+        abs(single_species_baselines$end_century_change), 
+        probs = c(0.85), na.rm = T),
+    oob = oob_squish, 
+    breaks = pretty_breaks(n = 5),
+    na.value = "transparent",
+    direction = -1) +
+  facet_nested(
+    model_type~species*scenario*season, 
+    labeller = labeller(model_type = label_wrap_gen(width = 8))) +
+  theme_map() +
+  theme(
+    legend.position = "bottom", 
+    legend.title.position = "top") +
+  guides(fill = guide_colorbar(barwidth = unit(10, "cm"))) +
+  coord_sf(
+    xlim = c(-182500, 1550000), 
+    ylim = c(3875000, 5370000) , 
+    expand = F, crs = 32619) +
+  labs(
+    title = "End-of Century Biomass Change (2090-2100)",
+    fill = "Biomass CPUE kg/km2")
+```
+
+
+
+
+# Overall Biomass Changes
+
+See the biomass changes (overall, US, Can) as time series over years for the outputs of different model structures and forward-projection methods within the s-t structure
+
+For the whole USA + Canada Region, here is what the timeseries for a single species' projected biomass could resemble
+
+```{r}
+
+# Get total area
+#total_area <- st_area(st_union(all_regs))
+total_area <- sum(all_regs$area)
+
+
+# Average density within each region per time step
+overall_summ <-  single_species_projections |>
+    group_by(species, model_type, scenario, season, year, date) |>
+    summarize(
+      "mean_biomass" = mean(proj_biomass_mean, na.rm = T), # if no transformation is needed
+      # Standard Error - How do we do this part?
+      #mean_error = mean(proj_biomass_se, na.rm = T),
+      se_mean = sqrt(sum(proj_biomass_se^2)) / n(),
+      
+      .groups = "drop") %>% 
+  # Multiply by total area
+  mutate(
+    biomass_total   = drop_units(mean_biomass * total_area),
+    biomass_uplim   = biomass_total + 1.96*se_mean,
+    biomass_downlim = biomass_total - 1.96*se_mean)
+
+
+# If it turns out we're fine
+overall_summ %>% #glimpse()
+  ggplot() +
+  geom_vline(xintercept = 2023, lty = "dashed") +
+  geom_ribbon(aes(x = year, ymin = biomass_downlim, ymax = biomass_uplim)) +
+  geom_line(
+    aes(x = year,
+        y = biomass_total, color = model_type),
+    lwd = 1) +
+  geom_vline(xintercept = 2023, lty = "dashed") +
+  scale_color_gmri() +
+  scale_y_continuous(
+    transform = transform_log10(),
+    labels = label_log(base = 10)) +
+  facet_nested(
+    season~species*scenario, 
+    labeller = labeller(model_type = label_wrap_gen(width = 8)),
+    scales = "free") +
+  theme_gmri(legend.position = "bottom") +
+  labs(
+    title = "Overall Biomass Timeseries", 
+    x = "Year", y = "Projected Total Biomass",
+    color = "Model Structure")
+
+
+```
+
+
+
+### Territory Timeseries
+
+Within each national jurisdiction (USA, CAN) we can estimate the total biomass from the predicted densities from the model.
+
+
+```{r}
+#####
+## Biomass time series
+#####
+
+# Average density within each region per time step
+territory_summary <-  single_species_projections |>
+    group_by(
+      jurisdiction, species, model_type, scenario, season, year, date) |>
+    summarize(
+      mean_biomass = mean(proj_biomass_mean, na.rm = T), 
+      se_mean = sqrt(sum(proj_biomass_se^2)) / n(),
+      .groups = "drop") %>% 
+  # Multiply by total areas
+  filter(is.na(jurisdiction) == FALSE) |>
+  left_join(all_regs, by = c("jurisdiction")) |>
+  mutate(
+    biomass_total = drop_units(mean_biomass * area),
+    biomass_uplim = biomass_total + 1.96*se_mean,
+    biomass_downlim = biomass_total - 1.96*se_mean) %>% 
+  # Get fraction of total by summing over the major groups
+  group_by(species, model_type, scenario, season, year, date) %>% 
+  mutate(total_area_biomass = sum(mean_biomass, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(frac_total = mean_biomass / total_area_biomass)
+  # # Get fraction of total - by joining in the overall
+  # left_join(
+  #   select(overall_summ, species, model_type, scenario, season, year, date, total_area_biomass = mean_biomass)) %>% 
+  # mutate(frac_total = mean_biomass / total_area_biomass)
+
+
+
+
+# Plot them all
+territory_summary %>% 
+  ggplot() +
+    geom_ribbon(
+      aes(x = year, ymin = biomass_downlim, ymax = biomass_uplim, 
+          group = jurisdiction)) +
+    geom_line(
+      aes(x = year, 
+          y = biomass_total, 
+          color = jurisdiction), 
+      lwd = 1) +
+    geom_vline(xintercept = 2019, lty = "dashed") +
+    scale_color_manual(values = c("DFO" = "#D80621", "NMFS"= "#002868"))  +
+    scale_y_continuous(
+      transform = transform_log10(),
+      labels = label_log(base = 10)) +
+    facet_nested(
+      scenario*model_type~species*season, 
+      labeller = labeller(model_type = label_wrap_gen(width = 8)),
+      scales = "free")  +
+    theme_gmri(legend.position = "bottom") + 
+    labs(
+      title = "Total Estimated Biomass",
+      x = "Year", y = "Projected Total Biomass")
+
+```
+
+### Territory Proportions
+
+What side of the hague line is most of the biomass located within?
+
+```{r}
+# Plot them all
+territory_summary %>% 
+ggplot() +
+  geom_area(
+    aes(x = year, 
+        y = frac_total, 
+        color = jurisdiction,
+        fill = jurisdiction),
+    alpha = 0.4) +
+  geom_vline(xintercept = 2019, lty = "dashed") +
+  scale_color_manual(values = c("DFO" = "#D80621", "NMFS"= "#002868")) + 
+  scale_fill_manual(values = c("DFO" = "#D80621", "NMFS"= "#002868")) + 
+  labs(x = "Year", y = "Fraction of Total Biomass") +
+  scale_y_continuous(labels = label_percent()) +
+  facet_nested(scenario*model_type~species*season, 
+      labeller = labeller(model_type = label_wrap_gen(width = 8)),
+      scales = "free")  +
+  theme_gmri(legend.position = "bottom") + 
+  labs(
+    title = "Fraction of Total Biomass within Each Territory"
+  )
+```
+
+
+
+
+# Modeling Choice Diagnostics
+
+Get outputs from Andrew for cod, halibut, and lobster and make tables or visuals to help us:
+
+
+## Forward Projection of Error:
+
+ 1. See the effects of different forward-projection methods within spatio-temporal model (e.g., AR1 vs RW vs IID year-season selection)
+i.e., how does the choice of method affect resulting trends in biomass, COG, variance, etc.?
+
+
+## Model Performance Statistics
+
+ 2. Compare model performance statistics (AIC, explanatory power, RMSE, etc.) for different model structures (i.e., null/env’t-only, spatial, spatio-temporal)--I’m thinking this could just be a table
+ 
+
+ 
+## Center of Gravity
+
+ 4. See the COG changes (across whole domain) as a time series over years for the outputs of different model structures and forward-projection methods within the s-t structure
+ 
+ 
+```{r}
+#| label: sdm_tmb center of gravity function
+
+
+# Center of gravity as weighted mean
+response_scale_COGrav <- function(df) {
+    cog_lat<- weighted.mean(
+      df[,"latitude"], 
+      w = df[, "proj_biomass_mean"], 
+      na.rm = T)
+    cog_lon<- weighted.mean(
+      df[,"longitude"], 
+      w = df[, "proj_biomass_mean"], 
+      na.rm = T)
+    
+    cog_out<- data.frame(
+      "COGx" = cog_lon, 
+      "COGy" = cog_lat)
+    return(cog_out)}
+```
+
+
+```{r}
+#| label: estimate centers of gravity
+#| eval: false
+
+
+# Estimate center of gravity
+single_species_cog <- single_species_projections |>
+    group_by(model_id, model_type, scenario, season, year, species) |>
+    nest() %>% 
+    mutate(
+      ID = row_number(),
+      COG = map(data, ~ response_scale_COGrav(.x))
+    ) |>
+    # dplyr::select(year, season, COG) |>
+    unnest_wider(COG) %>% 
+  mutate(
+    season = factor(season, levels = c("spring", "summer", "fall")),
+    Decade = year - year %% 10,
+    Decade = factor(Decade, levels = sort(unique(Decade))))
+```
+
+
+```{r}
+#| label: center of gravity timeseries
+#| eval: false
+
+ggplot() +
+  geom_line(data = single_species_cog, aes(x = year, y = COGy, color = season), lwd = 1) +
+  scale_color_manual(name = "season", values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  xlab("Year") +
+  ylab("Center of Latitude") +
+  facet_nested(scenario~species*model_type)  +
+  theme_gmri(legend.position = "bottom") +
+  labs(title = "Center of Latitude")
+```
+
+
+```{r}
+#| eval: false
+
+
+# Map the locations
+single_species_cog_sf <- st_as_sf(single_species_cog, coords = c("COGx", "COGy"), crs = 4326)
+ggplot() +
+    #geom_sf(data = all_regs, fill = "transparent") +
+    geom_sf(data = single_species_cog_sf, aes(color = Decade), alpha = 0.7) + 
+    geom_sf(data = land_sf, color = "dark gray", lwd = 0.2, na.rm = TRUE) +
+  geom_sf(data = hague_sf, color = "black", linetype = 3) + 
+  coord_sf(
+    xlim = range(single_species_cog$COGx)+ c(-2,2), 
+    ylim = range(single_species_cog$COGy) + c(-1,1), 
+    expand = T, crs = 4326) +
+    scale_fill_viridis_c(name = "Center of Gravity") +
+    facet_nested(
+      model_type~species*scenario*season, 
+      labeller = labeller(model_type = label_wrap_gen(width = 8))) +
+    theme_map() +
+    theme(panel.grid.major  = element_blank()) +
+    guides(color = guide_legend(override.aes = list(shape = 15, size = 5)))
+
+```
+
+
+```{r}
+#| label: COG with ggside
+#| eval: false
+
+# Does not work with sf, Just use year-round
+library(ggside)
+
+
+# Estimate center of gravity
+single_species_cog_annual <- single_species_projections |>
+    group_by(model_type, scenario, species, year) |>
+    nest() %>% 
+    mutate(
+      ID = row_number(),
+      COG = map(data, ~ COGrav(.x))
+    ) |>
+    # dplyr::select(year, season, COG) |>
+    unnest_wider(COG) %>% 
+  mutate(
+    Decade = year - year %% 10,
+    Decade = factor(Decade, levels = sort(unique(Decade))))
+
+
+# 
+ggplot(single_species_cog_annual, aes(COGx, COGy, color = Decade)) +
+  geom_point(aes(color = Decade), alpha = 0.9) +
+  geom_xsidedensity(
+    aes(y = after_stat(density), fill = Decade), 
+    position = "dodge", alpha = 0.4) +
+  geom_ysidedensity(
+    aes(x = after_stat(density), fill = Decade), 
+    position = "dodge", alpha = 0.4) +
+  facet_grid(
+    model_type~scenario*species,
+    labeller = labeller(model_group = label_wrap_gen(width = 8))) +
+  theme_map() +
+  theme(panel.grid.major = element_blank()) +
+  guides(color = guide_legend(
+    override.aes = list(shape = 15, size = 5),
+    nrow = 2)) +
+  theme(ggside.panel.scale = .3) +
+  labs(
+    title = "Center of Biomass Shifts",
+    subtitle = "Lat + Lon Components Displayed as Decadal Distributions",
+    y = "Latitude",
+    x = "Longitude")
+
+```
+
+
+
+## Regrouping
+
+ 5. I’m thinking this would be a relatively large set of figures and tables that include the following for all model structures (i.e., null, spatial, spatio-temporal AR1, s-t RW, s-t IID) and two climate scenarios (“overall”=over whole domain):
+ 6. Biomass overall maps (baseline, mid-century, end of century)
+ 7. Biomass overall time series with variance
+ 8. Biomass US vs Can time series with variance
+ 9. COG overall time series
+
+### Model performance stats:
+If you have other ideas of things we should look at / ways to look at this to help us get to final model selection, please let us know.
+
