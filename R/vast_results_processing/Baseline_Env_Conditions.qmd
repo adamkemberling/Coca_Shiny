@@ -291,6 +291,8 @@ rescale_df <- tribble(
 
 
 
+
+
 # Put them all  in one table
 pref_all <- pref_dat %>% 
   bind_rows(.id = "species") %>% 
@@ -423,6 +425,7 @@ ssp5_ts <- imap(var_list, function(x, y){
   read_csv(table_name, col_types = cols()) %>% 
     mutate(variable = y) %>% 
     rename(bias_corrected_value = {{var_sym}})
+  
 })   %>% 
     bind_rows() %>% 
     filter(ensemble_statistic %in% c("5th Percentile", "95th Percentile", "Ensemble Mean"),

@@ -25,30 +25,33 @@ crsbnd_path <- str_c(mills_path, "Projects/Single_Species_SDMS/Results")
 
 ```
 
-# About:
+# About: Baseline Conditions and Projections from Glorys Bias Corrections
 
-I'm tired of tracking down the baseline and +1,2,3,4C horizon period temperatures from the `sdm_workflow` repository.
+This markdown is in some parts a recreation of work done previouslt, and in other ways a new set of code for working with the newer SSP data we downloaded in 2025 which we bias-corrected with the GLORYS (instead of SODA). 
 
-This doc will cover creating new ones for the US and Candadian waters, for use on cross-boundary figures:
+The previous code for doing this could be found in [github.com/adamkemberling/sdm_workflow/CMIP6_processing/R/heper01_regional_timeseries_construction.R](https://github.com/adamkemberling/sdm_workflow/blob/5c366899eee9e3e8b807ed7def2460c0188f7eed/CMIP6_processing/R/helper01_regional_timeseries_construction.R), where I stepped through loading the individual model runs, and the ensemble statistics, and produced regional timeseries.
+
+For this quarto doc, I'm tired of tracking down the baseline and +1,2,3,4C horizon period temperatures from the `sdm_workflow` repository and want to produce in one place what we need for `CRSBND` figures.
+
+This doc will cover creating new regional (US/Canada/All) condition timeseries for use on cross-boundary figures. It will also cover producing gridded outputs for mapping the conditions at three points in time.
+
+ 1. A baseline period (2004-2023)  
+ 2. The mid-century (2045-2054)   
+ 3. The end of century (2091-2100) 
+ 
+Average seasonal bottom temperatures for these periods will be used in model diagnostic figures to map where predictions from the modes' temperature fixed effects place biomass on a map.
 
 
 
 ```{r}
 #| label: US and Canada Regions
 
-
 # Load the shapefiles
 dfo_bounds  <- read_sf(here::here("local_data/Regions_for_CRSBND/DFO.shp"))
 nmfs_bounds <- read_sf(here::here("local_data/Regions_for_CRSBND/NMFS.shp"))
+all_bounds  <- read_sf(here::here("local_data/Regions_for_CRSBND/All.shp"))
 land_sf     <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "nw_atlantic_countries_crs32619.geojson"))
 hague_sf    <- read_sf(here::here("COCA_SDM_app_dev/dev/scratch_data", "hagueline_crs32619.geojson"))
-
-
-# Need to get an area per region...number of cells per region
-full_reg_bounds <- bind_rows(dfo_bounds, nmfs_bounds) %>% 
-  st_union() %>% 
-  st_as_sf()
-
 ```
 
 ### Set SSP Data Load Options
@@ -66,10 +69,7 @@ ssp_select <- "SSP5_85"
 
 # Select ONE variable to use for workflow:
 # var_select <- "surf_temp"
-# var_select <- "surf_sal"
 var_select <- "bot_temp"
-# var_select <- "bot_sal"
-
 
 
 # variables to pull
@@ -81,13 +81,13 @@ vars_neat <- c(
 ```
 
 
-### load Bias Corrected SSP Scenario Data
 
+### load Bias Corrected SSP Scenario Data
 
 
 ```{r}
 # Loading Bias Corrected Data for Specific Variables and from Each Scenario
-# Bias Corrections Performed in :
+# Bias Corrections Performed in sdm_workflow:
 # CMIP6_processing/R/CMIP_SODA_bias_corrections.R
 # CMIP6_processing/R/CMIP_OISST_bias_corrections.R
 
@@ -96,14 +96,14 @@ load_bias_corrected <- function(cmip_var, ssp_scenario){
   # bias corrected data folders
   var_folders <- map(vars_neat, ~ cs_path(
     box_group = "res", 
-    subfolder = str_c("CMIP6/", ssp_scenario, "/BiasCorrected/IndividualModels/", .x, "/")))
+    subfolder = str_c("CMIP6/", ssp_scenario, "/GLORYS_bias_corrected/IndividualModels/", .x, "/")))
   var_folders <- setNames(var_folders, vars_neat)
   
   
   # list files:
-  file_paths <- str_c(list.files(var_folders[[cmip_var]], full.names = TRUE, pattern = "\\.grd$"))
-  file_names <- list.files(var_folders[[cmip_var]], full.names = FALSE, pattern = "\\.grd$")
-  file_names <- str_remove_all(file_names, ".grd")
+  file_paths <- str_c(list.files(var_folders[[cmip_var]], full.names = TRUE, pattern = "\\.nc$"))
+  file_names <- list.files(var_folders[[cmip_var]], full.names = FALSE, pattern = "\\.nc$")
+  file_names <- str_remove_all(file_names, ".nc")
   file_paths <- setNames(file_paths, file_names)
   
   # load as rasters in list
@@ -112,6 +112,8 @@ load_bias_corrected <- function(cmip_var, ssp_scenario){
   # Return the stack
   return(var_stacks)
 }
+
+
 ```
 
 
@@ -125,7 +127,7 @@ load_ensemble_percentiles <- function(cmip_var, ssp_scenario){
   # bias corrected data folders
   ens_folders <- map(vars_neat, ~ cs_path(
     box_group = "res", 
-    subfolder = str_c("CMIP6/", ssp_scenario, "/BiasCorrected/EnsembleData/", .x, "/")))
+    subfolder = str_c("CMIP6/", ssp_scenario, "/GLORYS_bias_corrected/EnsembleData/", .x, "/")))
   ens_folders <- setNames(ens_folders, vars_neat)
   
   # list files:
@@ -140,28 +142,41 @@ load_ensemble_percentiles <- function(cmip_var, ssp_scenario){
   # Return the stack
   return(ens_stacks)
 }
+
+
 ```
 
 
 
 ```{r}
-
 # load bias corrected data for individual scenario runs
-observed_var <- load_bias_corrected(
+single_model_runs <- load_bias_corrected(
   cmip_var = var_select, 
-  ssp_scenario = ssp_select)
+  ssp_scenario = ssp_select) %>% 
+  map(rotate)
 
 # Load ensemble percentile data
 ensemble_var <- load_ensemble_percentiles(
   cmip_var = var_select, 
   ssp_scenario = ssp_select)
+```
 
+
+```{r}
+#| label: quick check
+
+#names(single_model_runs$thetao_CanESM5_r1i1p2f1)
+
+# Plot checks
+plot(single_model_runs[[1]][[1]][[1]])
+plot(ensemble_var[[2]][[1]][[1]])
 ```
 
 
 ### Processing Functions
 
 Each array will be cropped to te region, and then a single average for the full area is taken for each time step.
+
 
 ```{r}
 # 1.
@@ -202,6 +217,24 @@ stack_to_df <- function(month_stack, var_name){
 ```
 
 
+```{r}
+#| label: confirm masking works as intended
+
+# Plot look good
+mask_shape(single_model_runs[[1]][[1]], in_mask = all_bounds) %>% plot()
+mask_shape(ensemble_var[[1]][[1]], in_mask = all_bounds) %>% plot()
+
+# # extents
+# mask_shape(single_model_runs$`stGrid_thetao_ACCESS-CM2_r1i1p1f1_historical`[[1]], in_mask = all_bounds) %>% extent()
+# mask_shape(ensemble_var$bot_temp_GLORYs_bias_corrected_mean[[1]], in_mask = all_bounds) %>% extent()
+
+```
+
+
+
+## Product 1: Timeseries for Regions of Interest
+
+
 `mask_and_stack` is a wrapper which repeats these steps for a group of areas and returns them all in one table.
 
 ```{r}
@@ -221,9 +254,8 @@ mask_and_stack <- function(masking_var, var_name){
   masked_dfo <- stack_to_df(month_stack = masked_dfo,var_name =  var_name)
   
   # Full US+Canada
-  masked_overall   <- mask_shape(in_ras = masking_var, in_mask = full_reg_bounds)
+  masked_overall   <- mask_shape(in_ras = masking_var, in_mask = all_bounds)
   masked_overall   <- stack_to_df(month_stack = masked_overall, var_name = var_name)
-  
   
   # Put in list, combine
   bind_rows(list(
@@ -231,7 +263,12 @@ mask_and_stack <- function(masking_var, var_name){
     "Canadian Survey Area"   = masked_dfo,
     "combined_surveys"       = masked_overall
   ), .id = "Region")
+  
 }
+
+
+
+
 
 ```
 
@@ -240,15 +277,19 @@ mask_and_stack <- function(masking_var, var_name){
 
 # Runs one variable at a time:
 masked_var <- map_dfr(
-  .x = observed_var,
-  .f = ~ mask_and_stack(masking_var = .x, var_name = var_select), 
+  .x = single_model_runs,
+  .f = ~ mask_and_stack(
+    masking_var = .x, 
+    var_name = var_select), 
   .id = "cmip_id")
 
 
 # Run the percentiles too
 masked_percentiles <- map_dfr(
   .x = ensemble_var,
-  .f = ~ mask_and_stack(masking_var = .x, var_name = var_select), 
+  .f = ~ mask_and_stack(
+    masking_var = .x, 
+    var_name = var_select), 
   .id = "cmip_id")
 
 ```
@@ -337,14 +378,14 @@ var_combined %>%
       color = "ensemble_statistic",
       size = "ensemble_statistic",
       alpha = "ensemble_statistic")) +
+  geom_vline(xintercept = as.Date("2015-01-01")) +
   geom_line() +
   scale_color_manual(values = spaghetti_pal) +
   scale_size_manual(values = spaghetti_sizes) +
   scale_alpha_manual(values = spaghetti_alpha) +
   facet_wrap(~Region, ncol = 1, scales = "free") +
   labs(x = "", y = var_label, color = "Ensemble Statistic") +
-  scale_x_date(limits = as.Date(c("2000-01-01", "2050-12-31"))) +
-  geom_vline(xintercept = as.Date("2015-01-01")) +
+  scale_x_date(limits = as.Date(c("1980-01-01", "2050-12-31"))) +
   guides(
     color = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 2),
     alpha = "none",
@@ -353,11 +394,13 @@ var_combined %>%
 ```
 
 
+
 ```{r}
 # ####  Export for later:  ####
 # 
 # # Folder To Put Table
-# scenario_folder <- cs_path("res", str_c("CMIP6/", ssp_select, "/BiasCorrected/TimeseriesData/"))
+# # scenario_folder <- cs_path("res", str_c("CMIP6/", ssp_select, "/BiasCorrected/TimeseriesData/")) # Path used for COCA
+# scenario_folder <- here("local_data", str_c("CRSBND_CMIP6/", ssp_select, "/BiasCorrectedTimeseries/")) # CRSBND revisitation
 # 
 # # File Name
 # ts_name <- str_c(scenario_folder, "CMIP6_bias_corrected_regional_", var_select, ".csv")
@@ -371,76 +414,245 @@ var_combined %>%
 ```
 
 
-## Prepare OISST/SODA/Glorys Timeseries
+## Product 2. Baseline, Mid-Century, End of Century Means
+
+Dec-Feb - Winter
+Mar-May - Spring
+June-Aug - Summer
+Sep-Nov - Fall
+
+Take the ensemble mean, 5th, 95th and return the mean over some period of time.
 
 
 ```{r}
-# SODA vars
-soda_ssal  <- stack(str_c(soda_path, "SODA_Salt_Red.nc")) # Has 50 depths, defaults to level 1 (surface)
-soda_bsal  <- stack(str_c(soda_path, "SODA_Salt_Red_bottomLayer.nc"))
-soda_btemp <- stack(str_c(soda_path, "SODA_Temp_Red_bottomLayer.nc"))
+#| label: regrid glorys to historical template, 
 
 
-# Load Monthly data
-oisst_month_path <- cs_path("res", "OISST/oisst_mainstays/monthly_averages")
-oisst_monthly <- stack(str_c(oisst_month_path, "oisst_monthly.nc"), varname = "sst")
+# not needed
+
+# # Take one raster as the template
+# template <- raster(single_model_runs[[1]][[1]])
+# 
+# resample_to_template <- function(in_stack, template, method = "bilinear"){
+#   resampled_stack <- resample(in_stack, template, method = method)
+# }
+# 
+# 
+# # Check it
+# resample_to_template(
+#   ensemble_var$bot_temp_GLORYs_bias_corrected_mean, 
+#   template = rotate(template), method = "bilinear")[[1]] %>% plot()
+# 
+# # Matches the 
+# plot(single_model_runs[[1]][[1]])
+# 
+# 
+# # Run the resampling for the ensembles
+# ensemble_var_resampled <- map(ensemble_var, ~resample_to_template(in_stack = .x, template = rotate(template), method = "bilinear"))
 
 ```
 
 
 
 ```{r}
-# Perform the masking:
+# Make a list of the seasonal periods
+season_mons <- list(
+  "Spring" = c("03", "04", "05"),
+  "Summer" = c("06", "07", "08"),
+  "Fall" = c("09", "10", "11")
+)
 
-# Runs one variable at a time:
-masked_surface_sal <- mask_and_stack(masking_var = soda_ssal, var_name = "surf_sal")
-masked_bottom_sal  <- mask_and_stack(masking_var = soda_bsal, var_name = "bot_sal")
-masked_bottom_temp <- mask_and_stack(masking_var = soda_btemp, var_name = "bot_temp")
-masked_surf_temp   <- mask_and_stack(masking_var = oisst_monthly, var_name = "surf_temp")
-
-
-# make months standardized for datetime joining
-tune_months <- function(x){
-  x  %>% 
-    mutate(month =  str_pad(month(date), side = "left", pad = "0", width = 2), 
-           date = as.Date(str_c(year,"-", month, "-15")))
-}
-
-masked_ssal <- tune_months(masked_surface_sal)
-masked_stemp <- tune_months(masked_surf_temp)
-masked_bsal <- tune_months(masked_bottom_sal)
-masked_btemp <- tune_months(masked_bottom_temp)
+# Make a list of the years we care about, map over this
+period_years <- list(
+  "baseline" = c(2004:2023), 
+  "mid-century"  = c(2045:2054), 
+  "end-of century" = c(2091:2100) 
+)
 
 
 ```
 
-
-### Check & Save
 
 
 ```{r}
+#| label: baseline period
 
-####  Check & Save  ####
-
-# Combine and add metadata
-# "date" is going to need some tuning before join
-references_combined <- left_join(
-  masked_ssal, masked_stemp, join_by("Region", "date", "year", "month")) %>% 
-  left_join(masked_bsal,join_by("Region", "date", "year", "month")) %>% 
-  left_join(masked_btemp, join_by("Region", "date", "year", "month"))
+# This is all crap, not what i meant to do
 
 
+# # Mask single model runs to US and Canada region, subset seasons
+# single_model_baseline <- map(
+#   .x = single_model_runs,
+#   function(.x){
+#     
+#     # Pull year indexing information
+#     years_idx <- which(str_sub(names(.x), 2,5) %in% period_years$baseline)
+#     
+#     # Slice years
+#     .x_years <- .x[[years_idx]]
+#     
+#     # Crop to our area
+#     .x_crop <- mask_shape(
+#       in_ras = .x_years,
+#       in_mask = all_bounds)
+#     
+#     # Get the indices for that season
+#     spring_idx <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Spring)
+#     summer_idx <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Summer)
+#     fall_idx   <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Fall)
+#     
+#     # Return in list
+#     seasons_cropped <- list(
+#       "Spring" = .x_crop[[spring_idx]],
+#       "Summer" = .x_crop[[summer_idx]],
+#       "Fall"   = .x_crop[[fall_idx]]
+#     )
+#           
+#   })    
 
-# # Save these things out
-# references_folder <- str_c(res_path, "CMIP6/Bias_Correction_Checking/bias_correction_reference_dataset_monthly_regional_means.csv")
-# write_csv(
-#   x = references_combined, 
-#   file = references_folder
-# )
 
 
+# # Mask historic period to US and Canada region
+# 
+# ensemble_baseline <- map(
+#   .x = ensemble_var,
+#   function(.x){
+#     
+#     # Pull year indexing information
+#     years_idx <- which(str_sub(names(.x), 2,5) %in% period_years$baseline)
+#     
+#     # Slice years
+#     .x_years <- .x[[years_idx]]
+#     
+#     # Crop to our area - this rotates
+#     .x_crop <- mask_shape(
+#       in_ras = .x_years,
+#       in_mask = all_bounds)
+#     
+#     # Get the indices for that season
+#     spring_idx <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Spring)
+#     summer_idx <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Summer)
+#     fall_idx   <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Fall)
+#     
+#     # Return in list
+#     seasons_cropped <- list(
+#       "Spring" = .x_crop[[spring_idx]],
+#       "Summer" = .x_crop[[summer_idx]],
+#       "Fall"   = .x_crop[[fall_idx]]
+#     )
+#           
+#   })    
+
+
+# # Check the extents
+# #extent(single_model_baseline[[2]][[1]][[1]]) == extent(ensemble_baseline[[2]][[1]][[1]])
+# plot(single_model_baseline[[2]][[1]][[1]])
+# plot(ensemble_baseline[[2]][[1]][[1]])
+# 
+# 
+# 
+# 
+# # Put the historic and ensemble period together by season
+# seasonal_baselines <- map(
+#   .x = list("Spring" = "Spring", 
+#             "Summer" = "Summer", 
+#             "Fall" = "Fall"),
+#   .f = function(season_x){
+#     
+#     # Pluck the appropriate seasons out of each
+#     single_model_seas  <- map(single_model_baseline, ~pluck(.x, season_x)) %>% stack()
+#     projected_seas <- map(ensemble_baseline, ~pluck(.x, season_x)) %>% stack()
+#     
+#     # average them all together
+#     seas_stack <- raster::stack(single_model_seas, projected_seas)
+#     seas_avg <- calc(seas_stack, fun = mean, na.rm = TRUE)
+#     
+#   })
+# 
+# 
+# 
+# library(tidyterra)
+# baselines_rast <- terra::rast(stack(seasonal_baselines))
+# ggplot() +
+#   tidyterra::geom_spatraster(data = terra::rast(stack(seasonal_baselines))$Spring) +
+#   scale_fill_distiller(palette = "RdBu")
 
 ```
+
+
+```{r}
+#| label: mid and end of century projected environments
+
+
+
+# Mask historic period to US and Canada region
+# Change the names of ensemble_var
+names(ensemble_var)
+
+period_averages <- map(period_years, function(year_subset){
+  
+  # Pull year indexing information (same for all)
+  ensemble_timesteps <- names(ensemble_var[[1]])
+  years_idx <- which(str_sub(ensemble_timesteps, 2,5) %in% period_years$baseline)
+  
+  # Slice years on each ensemble stat
+  ensemble_seasons <- map(
+    ensemble_var, function(.x){
+      
+      # Subset to the period
+      .x_years <- .x[[years_idx]]
+      
+      # Crop to our area
+      .x_crop <- mask_shape(
+        in_ras = .x_years,
+        in_mask = all_bounds)
+      
+      # Get the indices for that season
+      spring_idx <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Spring)
+      summer_idx <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Summer)
+      fall_idx   <- which(str_sub(names(.x_crop), 7,8) %in% season_mons$Fall)
+      
+      # Return in list
+      seasons_cropped <- list(
+        "Spring" = calc(.x_crop[[spring_idx]], mean, na.rm = T),
+        "Summer" = calc(.x_crop[[summer_idx]], mean, na.rm = T),
+        "Fall"   = calc(.x_crop[[fall_idx]], mean, na.rm = T)
+      )
+      
+      })
+  
+  # Return the list
+  return(ensemble_seasons)
+  
+  
+})
+    
+# Plot the baseline mean
+period_averages$baseline$bot_temp_GLORYs_bias_corrected_mean$Spring
+plot(period_averages$baseline$bot_temp_GLORYs_bias_corrected_mean$Spring)
+
+```
+
+
+```{r}
+#| label: export as rds
+
+write_rds(period_averages, 
+          here::here("local_data/CRSBND_CMIP6/", ssp_select, "ensemble_period_averages/baseline_mid_end_century_bottemp.rds"))
+
+```
+
+
+
+```{r}
+#| label: exporting as netcdf
+
+# tbd
+# not worth it
+
+```
+
+
 
 
 
